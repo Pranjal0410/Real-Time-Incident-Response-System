@@ -35,6 +35,12 @@ const request = async (endpoint, options = {}) => {
   const data = await response.json();
 
   if (!response.ok) {
+    // Auto-logout on invalid/expired token (skip for login/register endpoints)
+    if (response.status === 401 && !endpoint.startsWith('/auth/login') && !endpoint.startsWith('/auth/register')) {
+      localStorage.removeItem('auth-storage');
+      window.location.href = '/login';
+      throw new Error('Session expired. Please log in again.');
+    }
     throw new Error(data.error || 'Request failed');
   }
 

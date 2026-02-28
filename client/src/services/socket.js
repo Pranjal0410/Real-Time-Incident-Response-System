@@ -71,6 +71,12 @@ export const initSocket = (token) => {
   socket.on('connect_error', (error) => {
     console.error('Socket connection error:', error.message);
     socketStore.setConnectionError(error.message);
+
+    // Auto-logout on auth failure
+    if (error.message === 'Invalid token' || error.message === 'No token provided') {
+      localStorage.removeItem('auth-storage');
+      window.location.href = '/login';
+    }
   });
 
   socket.on('error', (error) => {
