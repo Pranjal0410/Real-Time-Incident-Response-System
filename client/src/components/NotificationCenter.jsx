@@ -17,9 +17,33 @@ export function NotificationCenter({ isOpen, onClose }) {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <div ref={ref} className="fixed top-14 right-6 z-50 w-96 max-w-[calc(100vw-32px)] bg-secondary rounded-lg shadow-2xl border border-border-primary overflow-hidden">
+    <div
+      ref={ref}
+      style={{
+        position: 'fixed',
+        top: '56px',
+        right: '24px',
+        zIndex: 50,
+        width: '384px',
+        maxWidth: 'calc(100vw - 32px)',
+        backgroundColor: 'var(--bg-secondary)',
+        borderRadius: '0.5rem',
+        border: '1px solid var(--border-primary)',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+        overflow: 'hidden'
+      }}
+    >
       {/* Header */}
-      <div className="bg-tertiary border-b border-border-primary px-4 py-3 flex justify-between items-center">
+      <div
+        style={{
+          backgroundColor: 'var(--bg-tertiary)',
+          borderBottom: '1px solid var(--border-primary)',
+          padding: '0.75rem 1rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}
+      >
         <div>
           <h2 className="text-lg font-semibold text-primary">Notifications</h2>
           {unreadCount > 0 && (
@@ -38,18 +62,24 @@ export function NotificationCenter({ isOpen, onClose }) {
       </div>
 
       {/* Notifications List */}
-      <div className="max-h-96 overflow-y-auto">
+      <div style={{ maxHeight: '384px', overflowY: 'auto' }}>
         {notifications.length === 0 ? (
-          <div className="px-4 py-8 text-center text-secondary">
+          <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
             <p>No notifications yet</p>
           </div>
         ) : (
           notifications.map((notification) => (
             <div
               key={notification.id}
-              className={`px-4 py-3 border-b border-border-primary hover:bg-tertiary transition cursor-pointer ${
-                !notification.read ? 'bg-tertiary bg-opacity-50' : ''
-              }`}
+              style={{
+                padding: '0.75rem 1rem',
+                borderBottom: '1px solid var(--border-primary)',
+                backgroundColor: !notification.read ? 'rgba(45, 45, 45, 0.5)' : 'transparent',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = !notification.read ? 'rgba(45, 45, 45, 0.5)' : 'transparent')}
               onClick={() => markAsRead(notification.id)}
             >
               <div className="flex justify-between items-start gap-3">
@@ -87,7 +117,15 @@ export function NotificationCenter({ isOpen, onClose }) {
 
       {/* Footer Actions */}
       {notifications.length > 0 && (
-        <div className="bg-tertiary border-t border-border-primary px-4 py-2 flex gap-2">
+        <div
+          style={{
+            backgroundColor: 'var(--bg-tertiary)',
+            borderTop: '1px solid var(--border-primary)',
+            padding: '0.5rem 1rem',
+            display: 'flex',
+            gap: '0.5rem'
+          }}
+        >
           {unreadCount > 0 && (
             <button
               onClick={markAllAsRead}
