@@ -30,7 +30,8 @@ import {
   usePresenceStore,
   useFocusStore,
   useSocketStore,
-  useAuthStore
+  useAuthStore,
+  useNotificationStore
 } from '../stores';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
@@ -102,9 +103,15 @@ export const initSocket = (token) => {
       // Don't show toast for current user
       const currentUser = useAuthStore.getState().user;
       if (user.userId !== currentUser?._id) {
-        toast.info(`${user.name} joined the incident`, {
+        const message = `${user.name} joined the incident`;
+        toast.info(message, {
           duration: 3000,
           icon: '👋'
+        });
+        useNotificationStore.getState().addNotification({
+          message,
+          icon: '👋',
+          type: 'presence'
         });
       }
     }
@@ -114,9 +121,15 @@ export const initSocket = (token) => {
     const activeIncident = useIncidentStore.getState().activeIncident;
     if (activeIncident) {
       usePresenceStore.getState().removeUser(activeIncident._id, userId);
-      toast.info(`${userName} left the incident`, {
+      const message = `${userName} left the incident`;
+      toast.info(message, {
         duration: 3000,
         icon: '👋'
+      });
+      useNotificationStore.getState().addNotification({
+        message,
+        icon: '👋',
+        type: 'presence'
       });
     }
   });
@@ -158,9 +171,15 @@ export const initSocket = (token) => {
     if (update) {
       store.addUpdate({ ...update, incidentId });
       if (update.type === 'status_change') {
-        toast.info(`Status changed to ${incident.status}`, {
+        const message = `Status changed to ${incident.status}`;
+        toast.info(message, {
           duration: 3000,
           icon: '📊'
+        });
+        useNotificationStore.getState().addNotification({
+          message,
+          icon: '📊',
+          type: 'status'
         });
       }
     }
@@ -169,9 +188,15 @@ export const initSocket = (token) => {
   socket.on('incident:noteAdded', ({ incidentId, update }) => {
     useIncidentStore.getState().addUpdate({ ...update, incidentId });
     if (update && update.userId?.name) {
-      toast.info(`${update.userId.name} added a note`, {
+      const message = `${update.userId.name} added a note`;
+      toast.info(message, {
         duration: 3000,
         icon: '📝'
+      });
+      useNotificationStore.getState().addNotification({
+        message,
+        icon: '📝',
+        type: 'note'
       });
     }
   });

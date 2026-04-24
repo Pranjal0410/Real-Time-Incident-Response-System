@@ -64,3 +64,4 @@ export { default as useIncidentStore } from './incidentStore';
 export { default as usePresenceStore } from './presenceStore';
 export { default as useFocusStore } from './focusStore';
 export { default as useSocketStore } from './socketStore';
+export { default as useNotificationStore } from './notificationStore';
