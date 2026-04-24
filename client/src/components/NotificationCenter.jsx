@@ -17,7 +17,7 @@ export function NotificationCenter({ isOpen, onClose }) {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <div ref={ref} className="fixed top-16 right-4 z-50 w-96 bg-secondary rounded-lg shadow-2xl border border-border-primary overflow-hidden">
+    <div ref={ref} className="fixed top-14 right-6 z-50 w-96 max-w-[calc(100vw-32px)] bg-secondary rounded-lg shadow-2xl border border-border-primary overflow-hidden">
       {/* Header */}
       <div className="bg-tertiary border-b border-border-primary px-4 py-3 flex justify-between items-center">
         <div>
