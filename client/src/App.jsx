@@ -9,6 +9,7 @@
  */
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import { useAuthStore } from './stores';
 import { useSocket } from './hooks';
 import { authApi } from './services/api';
@@ -69,6 +70,12 @@ export function App() {
   return (
     <BrowserRouter>
       <AppShell>
+        <Toaster
+          position="top-right"
+          theme="dark"
+          richColors
+          closeButton
+        />
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />

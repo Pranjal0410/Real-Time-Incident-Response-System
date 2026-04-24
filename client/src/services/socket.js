@@ -24,11 +24,13 @@
  * network interruptions.
  */
 import { io } from 'socket.io-client';
+import { toast } from 'sonner';
 import {
   useIncidentStore,
   usePresenceStore,
   useFocusStore,
-  useSocketStore
+  useSocketStore,
+  useAuthStore
 } from '../stores';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
@@ -97,13 +99,25 @@ export const initSocket = (token) => {
     const activeIncident = useIncidentStore.getState().activeIncident;
     if (activeIncident) {
       usePresenceStore.getState().addUser(activeIncident._id, user);
+      // Don't show toast for current user
+      const currentUser = useAuthStore.getState().user;
+      if (user.userId !== currentUser?._id) {
+        toast.info(`${user.name} joined the incident`, {
+          duration: 3000,
+          icon: '👋'
+        });
+      }
     }
   });
 
-  socket.on('presence:left', ({ userId }) => {
+  socket.on('presence:left', ({ userId, userName }) => {
     const activeIncident = useIncidentStore.getState().activeIncident;
     if (activeIncident) {
       usePresenceStore.getState().removeUser(activeIncident._id, userId);
+      toast.info(`${userName} left the incident`, {
+        duration: 3000,
+        icon: '👋'
+      });
     }
   });
 
@@ -143,11 +157,23 @@ export const initSocket = (token) => {
     store.updateIncident(incidentId, incident);
     if (update) {
       store.addUpdate({ ...update, incidentId });
+      if (update.type === 'status_change') {
+        toast.info(`Status changed to ${incident.status}`, {
+          duration: 3000,
+          icon: '📊'
+        });
+      }
     }
   });
 
   socket.on('incident:noteAdded', ({ incidentId, update }) => {
     useIncidentStore.getState().addUpdate({ ...update, incidentId });
+    if (update) {
+      toast.info(`${update.author} added a note`, {
+        duration: 3000,
+        icon: '📝'
+      });
+    }
   });
 
   socket.on('incident:assigned', ({ incidentId, incident, update }) => {

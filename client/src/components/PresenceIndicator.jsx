@@ -3,6 +3,7 @@
  * Shows who is currently viewing the incident - Dark theme
  */
 import { usePresenceStore, useAuthStore } from '../stores';
+import { Tooltip } from './Tooltip';
 
 export function PresenceIndicator({ incidentId }) {
   const users = usePresenceStore((state) => state.getIncidentUsers(incidentId));
@@ -30,13 +31,24 @@ export function PresenceIndicator({ incidentId }) {
 
       {/* Current user */}
       <div className="flex items-center gap-2">
-        <div
-          className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium"
-          style={{ backgroundColor: 'var(--accent-primary)' }}
-          title={`${currentUser?.name} (you)`}
+        <Tooltip
+          content={
+            <div className="text-center">
+              <div className="font-semibold">{currentUser?.name}</div>
+              <div className="text-xs text-gray-400">{currentUser?.role || 'User'}</div>
+            </div>
+          }
         >
-          {getInitials(currentUser?.name)}
-        </div>
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium cursor-pointer hover:ring-2 hover:ring-offset-1"
+            style={{
+              backgroundColor: 'var(--accent-primary)',
+              '--ring-offset-color': 'var(--bg-secondary)'
+            }}
+          >
+            {getInitials(currentUser?.name)}
+          </div>
+        </Tooltip>
         <span className="text-sm text-primary">You</span>
       </div>
 
@@ -48,17 +60,26 @@ export function PresenceIndicator({ incidentId }) {
             <span className="text-sm text-secondary">Also viewing:</span>
             <div className="flex -space-x-2">
               {otherUsers.slice(0, 5).map((user) => (
-                <div
+                <Tooltip
                   key={user.userId}
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium border-2"
-                  style={{
-                    backgroundColor: user.color,
-                    borderColor: 'var(--bg-secondary)'
-                  }}
-                  title={user.name}
+                  content={
+                    <div className="text-center">
+                      <div className="font-semibold">{user.name}</div>
+                      <div className="text-xs text-gray-400">{user.role || 'User'}</div>
+                    </div>
+                  }
                 >
-                  {getInitials(user.name)}
-                </div>
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium border-2 cursor-pointer hover:ring-2 hover:ring-offset-1"
+                    style={{
+                      backgroundColor: user.color,
+                      borderColor: 'var(--bg-secondary)',
+                      '--ring-offset-color': 'var(--bg-secondary)'
+                    }}
+                  >
+                    {getInitials(user.name)}
+                  </div>
+                </Tooltip>
               ))}
               {otherUsers.length > 5 && (
                 <div
