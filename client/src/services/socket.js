@@ -88,6 +88,18 @@ export const initSocket = (token) => {
   });
 
   // ─────────────────────────────────────────
+  // NOTIFICATION EVENTS → notificationStore
+  // ─────────────────────────────────────────
+
+  socket.on('notification:new', (notification) => {
+    useNotificationStore.getState().addNotification({
+      message: notification.message,
+      icon: notification.icon,
+      type: notification.type
+    });
+  });
+
+  // ─────────────────────────────────────────
   // PRESENCE EVENTS → presenceStore
   // ─────────────────────────────────────────
 

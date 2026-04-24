@@ -307,6 +307,16 @@ const handleJoinIncident = async (socket, incidentId) => {
     color: socket.userColor
   });
 
+  // Broadcast notification to ALL connected users
+  io.emit('notification:new', {
+    message: `${socket.user.name} joined the incident`,
+    icon: '👋',
+    type: 'presence',
+    incidentId,
+    userId: socket.user._id,
+    timestamp: new Date()
+  });
+
   // Send full presence list ONLY to the joining user
   socket.emit('presence:list', {
     incidentId,
@@ -359,6 +369,16 @@ const handleLeaveIncident = async (socket, incidentId) => {
   socket.to(roomName).emit('presence:left', {
     userId: socket.user._id,
     name: socket.user.name
+  });
+
+  // Broadcast notification to ALL connected users
+  io.emit('notification:new', {
+    message: `${socket.user.name} left the incident`,
+    icon: '👋',
+    type: 'presence',
+    incidentId,
+    userId: socket.user._id,
+    timestamp: new Date()
   });
 
   // Broadcast focus cleared
@@ -545,6 +565,16 @@ const handleStatusUpdate = async (socket, { incidentId, status }) => {
     update
   });
 
+  // 8. Broadcast notification to ALL connected users
+  io.emit('notification:new', {
+    message: `${socket.user.name} changed status to ${status}`,
+    icon: '📊',
+    type: 'status',
+    incidentId,
+    userId: socket.user._id,
+    timestamp: new Date()
+  });
+
   console.log(`Status updated: ${incidentId} ${currentIncident.status} → ${status} by ${socket.user.name}`);
 };
 
@@ -595,6 +625,16 @@ const handleAddNote = async (socket, { incidentId, text }) => {
       },
       createdAt: update.createdAt
     }
+  });
+
+  // 5. Broadcast notification to ALL connected users
+  io.emit('notification:new', {
+    message: `${socket.user.name} added a note`,
+    icon: '📝',
+    type: 'note',
+    incidentId,
+    userId: socket.user._id,
+    timestamp: new Date()
   });
 
   console.log(`Note added to ${incidentId} by ${socket.user.name}`);
