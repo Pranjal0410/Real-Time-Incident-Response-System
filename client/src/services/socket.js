@@ -171,7 +171,8 @@ export const initSocket = (token) => {
     if (update) {
       store.addUpdate({ ...update, incidentId });
       if (update.type === 'status_change') {
-        const message = `Status changed to ${incident.status}`;
+        const userName = update.userId?.name || 'Someone';
+        const message = `${userName} changed status to ${incident.status}`;
         toast.info(message, {
           duration: 3000,
           icon: '📊'
