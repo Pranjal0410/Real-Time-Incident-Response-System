@@ -168,8 +168,8 @@ export const initSocket = (token) => {
 
   socket.on('incident:noteAdded', ({ incidentId, update }) => {
     useIncidentStore.getState().addUpdate({ ...update, incidentId });
-    if (update) {
-      toast.info(`${update.author} added a note`, {
+    if (update && update.userId?.name) {
+      toast.info(`${update.userId.name} added a note`, {
         duration: 3000,
         icon: '📝'
       });
