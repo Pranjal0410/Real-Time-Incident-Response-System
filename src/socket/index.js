@@ -59,30 +59,55 @@
  * - Immutable audit trail for post-incident review
  * - Each update is a discrete, typed record, not conversation
  *
- * FOCUS PRESENCE (Ephemeral):
- * ───────────────────────────
+ * FOCUS PRESENCE (Redis-backed Ephemeral):
+ * ─────────────────────────────────────────
  * Focus presence shows which section/field a user is currently editing.
- * Unlike incident updates, focus state is:
- * - NOT persisted to database (ephemeral, in-memory only)
- * - NOT part of the audit trail
- * - Throttled to reduce network traffic
- * - Automatically cleared on disconnect
  *
- * Why not persist focus state?
- * - It changes rapidly (every focus/blur event)
- * - It has no historical value
- * - It would bloat the database unnecessarily
- * - Memory-only state is sufficient for real-time collaboration
+ * UPGRADED from in-memory Map to Redis for 3 reasons:
+ * 1. Server restart pe state persist rehti hai (TTL-based auto-expiry)
+ * 2. Multiple server instances ke beech shared state (horizontal scaling)
+ * 3. SETEX atomically sets value + TTL in one operation
+ *
+ * Redis keys used:
+ * - focus:{userId}     → stores which section user is editing (TTL: 5 min)
+ * - throttle:{userId}  → rate limiting focus updates (TTL: 100ms)
+ *
+ * MULTI-SERVER BROADCASTING (Redis Pub/Sub):
+ * ──────────────────────────────────────────
+ * Problem: User A on Server 1, User B on Server 2.
+ * Server 1 broadcasts update → only Server 1's clients hear it.
+ * User B on Server 2 never receives the update!
+ *
+ * Solution: After local broadcast, publish to Redis channel.
+ * All servers subscribe to channel → relay to their clients.
+ * Result: ALL users on ALL servers receive updates. ✅
  */
+
 const { Server } = require('socket.io');
 const { authenticateSocket } = require('../middleware/auth');
 const { presenceService, incidentService } = require('../services');
 const config = require('../config');
 
+// ─────────────────────────────────────────────────────────────
+// REDIS IMPORT
+// Used for:
+// 1. Focus state storage (replaces in-memory Map)
+// 2. Focus update throttling (replaces in-memory Map)
+// 3. Pub/Sub for multi-server broadcasting
+// ─────────────────────────────────────────────────────────────
+const redis = require('../config/redis');
+
+// ─────────────────────────────────────────────────────────────
+// PUB/SUB IMPORT
+// initPubSub: subscribes this server to Redis broadcast channel
+// publishToAll: publishes update so ALL servers relay to their clients
+// ─────────────────────────────────────────────────────────────
+const { initPubSub, publishToAll } = require('./pubsub');
+
 let io;
 
 // ═══════════════════════════════════════════════════════════════
-// CONSTANTS & STATE
+// CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 
 // Roles that can modify incidents
@@ -98,14 +123,12 @@ const STATUS_TRANSITIONS = {
 };
 
 // Focus throttle: minimum ms between focus updates per user
+// 100ms = max 10 updates/second per user
 const FOCUS_THROTTLE_MS = 100;
 
-// In-memory focus state: Map<odId, { incidentId, section, fieldId, lastUpdate }>
-// Not persisted - purely ephemeral for real-time collaboration
-const userFocusState = new Map();
-
-// Throttle timestamps: Map<userId, timestamp>
-const focusThrottles = new Map();
+// Focus state TTL in seconds (5 minutes)
+// If user crashes without clean disconnect, state auto-clears
+const FOCUS_TTL_SECONDS = 300;
 
 // Color palette for user focus indicators (deterministic assignment)
 const FOCUS_COLORS = [
@@ -130,6 +153,7 @@ const canWrite = (user) => WRITE_ROLES.includes(user.role);
 
 /**
  * Validate status transition against state machine
+ * Returns false if transition is not allowed
  */
 const isValidTransition = (currentStatus, newStatus) => {
   if (currentStatus === newStatus) return false;
@@ -142,28 +166,32 @@ const isValidTransition = (currentStatus, newStatus) => {
  * Same user always gets same color across sessions
  */
 const getUserColor = (userId) => {
-  // Simple hash of odId to get consistent color index
   let hash = 0;
   const idStr = userId.toString();
   for (let i = 0; i < idStr.length; i++) {
     hash = ((hash << 5) - hash) + idStr.charCodeAt(i);
-    hash = hash & hash; // Convert to 32-bit integer
+    hash = hash & hash;
   }
   return FOCUS_COLORS[Math.abs(hash) % FOCUS_COLORS.length];
 };
 
 /**
- * Check if focus update should be throttled
+ * Check if focus update should be throttled using Redis
+ *
+ * How it works:
+ * - First call: key doesn't exist → set with 100ms TTL → don't throttle
+ * - Within 100ms: key exists → throttle (drop the update)
+ * - After 100ms: key expired → next call goes through
+ *
+ * Why Redis over in-memory Map?
+ * - Works across multiple server instances
+ * - Auto-expires (no manual cleanup needed)
  */
-const shouldThrottleFocus = (userId) => {
-  const lastUpdate = focusThrottles.get(userId);
-  const now = Date.now();
-
-  if (lastUpdate && (now - lastUpdate) < FOCUS_THROTTLE_MS) {
-    return true;
-  }
-
-  focusThrottles.set(userId, now);
+const shouldThrottleFocus = async (userId) => {
+  const key = `throttle:focus:${userId}`;
+  const exists = await redis.get(key);
+  if (exists) return true;
+  await redis.set(key, 1, 'PX', FOCUS_THROTTLE_MS);
   return false;
 };
 
@@ -200,68 +228,59 @@ const initializeSocket = (httpServer) => {
     }
   });
 
-  // Apply authentication middleware
+  // Apply JWT authentication middleware
   io.use(authenticateSocket);
 
-  // Connection handler
+  // ─────────────────────────────────────────
+  // INIT REDIS PUB/SUB
+  // Must be called after io is created
+  // This server will now receive broadcasts from OTHER servers
+  // and relay them to its own connected clients
+  // ─────────────────────────────────────────
+  initPubSub(io);
+
   io.on('connection', (socket) => {
     console.log(`User connected: ${socket.user.name} (${socket.id})`);
 
-    // Assign consistent color to user
     socket.userColor = getUserColor(socket.user._id);
 
-    // ─────────────────────────────────────────
     // PRESENCE EVENTS
-    // ─────────────────────────────────────────
     socket.on('incident:join', (incidentId) =>
       withErrorHandler(handleJoinIncident)(socket, incidentId)
     );
-
     socket.on('incident:leave', (incidentId) =>
       withErrorHandler(handleLeaveIncident)(socket, incidentId)
     );
-
     socket.on('presence:heartbeat', () =>
       withErrorHandler(handleHeartbeat)(socket)
     );
 
-    // ─────────────────────────────────────────
-    // FOCUS PRESENCE EVENTS (Ephemeral)
-    // ─────────────────────────────────────────
+    // FOCUS PRESENCE EVENTS (Redis-backed)
     socket.on('focus:update', (data) =>
       withErrorHandler(handleFocusUpdate)(socket, data)
     );
-
     socket.on('focus:clear', (data) =>
       withErrorHandler(handleFocusClear)(socket, data)
     );
 
-    // ─────────────────────────────────────────
-    // INCIDENT UPDATE EVENTS (Structured, not chat)
-    // ─────────────────────────────────────────
+    // INCIDENT UPDATE EVENTS
     socket.on('incident:updateStatus', (data) =>
       withErrorHandler(handleStatusUpdate)(socket, data)
     );
-
     socket.on('incident:addNote', (data) =>
       withErrorHandler(handleAddNote)(socket, data)
     );
-
     socket.on('incident:assign', (data) =>
       withErrorHandler(handleAssignment)(socket, data)
     );
-
     socket.on('incident:addActionItem', (data) =>
       withErrorHandler(handleActionItem)(socket, data)
     );
-
     socket.on('incident:toggleActionItem', (data) =>
       withErrorHandler(handleToggleActionItem)(socket, data)
     );
 
-    // ─────────────────────────────────────────
     // DISCONNECT
-    // ─────────────────────────────────────────
     socket.on('disconnect', () =>
       withErrorHandler(handleDisconnect)(socket)
     );
@@ -274,32 +293,17 @@ const initializeSocket = (httpServer) => {
 // PRESENCE HANDLERS
 // ═══════════════════════════════════════════════════════════════
 
-/**
- * Handle user joining an incident room
- *
- * Flow:
- * 1. Join Socket.io room
- * 2. Create presence record in database
- * 3. Fetch current room members
- * 4. Broadcast join event to OTHERS in room
- * 5. Send full presence list to JOINING USER ONLY
- * 6. Send current focus states to joining user
- */
 const handleJoinIncident = async (socket, incidentId) => {
   const odId = socket.user._id.toString();
   const roomName = `incident:${incidentId}`;
 
-  // Join the Socket.io room
   socket.join(roomName);
   console.log(`${socket.user.name} joined ${roomName}`);
 
-  // Record presence in database
   await presenceService.joinIncident(odId, incidentId, socket.id);
-
-  // Get all users currently in this incident
   const presenceList = await presenceService.getIncidentPresence(incidentId);
 
-  // Broadcast to OTHERS in the room (not the joining user)
+  // Broadcast join to OTHERS in room
   socket.to(roomName).emit('presence:joined', {
     userId: socket.user._id,
     name: socket.user.name,
@@ -307,7 +311,7 @@ const handleJoinIncident = async (socket, incidentId) => {
     color: socket.userColor
   });
 
-  // Broadcast notification to ALL connected users
+  // Notify ALL connected users
   io.emit('notification:new', {
     message: `${socket.user.name} joined the incident`,
     icon: '👋',
@@ -317,7 +321,7 @@ const handleJoinIncident = async (socket, incidentId) => {
     timestamp: new Date()
   });
 
-  // Send full presence list ONLY to the joining user
+  // Send presence list ONLY to joining user
   socket.emit('presence:list', {
     incidentId,
     users: presenceList.map(p => ({
@@ -329,12 +333,20 @@ const handleJoinIncident = async (socket, incidentId) => {
     }))
   });
 
-  // Send current focus states for this incident to joining user
+  // Read focus states from Redis for this incident
+  // Works across ALL server instances (not just this one)
+  const focusKeys = await redis.keys('focus:*');
   const focusStates = [];
-  for (const [odId, state] of userFocusState.entries()) {
+
+  for (const key of focusKeys) {
+    const raw = await redis.get(key);
+    if (!raw) continue; // may have expired between keys() and get()
+
+    const state = JSON.parse(raw);
     if (state.incidentId === incidentId) {
+      const userId = key.replace('focus:', '');
       focusStates.push({
-        userId: odId,
+        userId,
         section: state.section,
         fieldId: state.fieldId,
         color: state.color,
@@ -348,9 +360,6 @@ const handleJoinIncident = async (socket, incidentId) => {
   }
 };
 
-/**
- * Handle user leaving an incident room
- */
 const handleLeaveIncident = async (socket, incidentId) => {
   const odId = socket.user._id.toString();
   const roomName = `incident:${incidentId}`;
@@ -360,18 +369,14 @@ const handleLeaveIncident = async (socket, incidentId) => {
 
   await presenceService.leaveIncident(odId, incidentId);
 
-  // Clear focus state for this user/incident
-  const focusState = userFocusState.get(odId);
-  if (focusState && focusState.incidentId === incidentId) {
-    userFocusState.delete(odId);
-  }
+  // Clear focus state from Redis
+  await redis.del(`focus:${odId}`);
 
   socket.to(roomName).emit('presence:left', {
     userId: socket.user._id,
     name: socket.user.name
   });
 
-  // Broadcast notification to ALL connected users
   io.emit('notification:new', {
     message: `${socket.user.name} left the incident`,
     icon: '👋',
@@ -381,42 +386,30 @@ const handleLeaveIncident = async (socket, incidentId) => {
     timestamp: new Date()
   });
 
-  // Broadcast focus cleared
   socket.to(roomName).emit('focus:cleared', {
     userId: socket.user._id
   });
 };
 
-/**
- * Handle presence heartbeat - prevents TTL expiration
- */
 const handleHeartbeat = async (socket) => {
   await presenceService.updateActivity(socket.id);
 };
 
-/**
- * Handle socket disconnect
- * Cleanup is both reactive (here) and defensive (TTL expiry)
- */
 const handleDisconnect = async (socket) => {
   console.log(`User disconnected: ${socket.user.name} (${socket.id})`);
   const odId = socket.user._id.toString();
 
-  // Get incidents user was viewing before cleanup
+  // Clean up Redis keys
+  await redis.del(`focus:${odId}`);
+  await redis.del(`throttle:focus:${odId}`);
+
   const incidentIds = await presenceService.removeBySocketId(socket.id);
 
-  // Clear focus state
-  userFocusState.delete(odId);
-  focusThrottles.delete(odId);
-
-  // Notify each room
   for (const incidentId of incidentIds) {
     io.to(`incident:${incidentId}`).emit('presence:left', {
       userId: socket.user._id,
       name: socket.user.name
     });
-
-    // Broadcast focus cleared
     io.to(`incident:${incidentId}`).emit('focus:cleared', {
       userId: socket.user._id
     });
@@ -424,49 +417,38 @@ const handleDisconnect = async (socket) => {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// FOCUS PRESENCE HANDLERS (Ephemeral - Not Persisted)
+// FOCUS PRESENCE HANDLERS (Redis-backed)
 // ═══════════════════════════════════════════════════════════════
 
-/**
- * Handle focus update (user focused on a section/field)
- *
- * Event contract:
- * Client sends: { incidentId: string, section: string, fieldId?: string }
- * Server relays to room (throttled): { odId, section, fieldId, color, name }
- *
- * Sections: 'status', 'severity', 'description', 'notes', 'assignees', 'action_items'
- * fieldId: Optional specific field within section (e.g., note ID being edited)
- *
- * Performance considerations:
- * - Throttled to max 10 updates/second per user (100ms minimum gap)
- * - Only relayed, not persisted
- * - In-memory state only
- */
 const handleFocusUpdate = async (socket, { incidentId, section, fieldId }) => {
   const odId = socket.user._id.toString();
 
-  // Throttle rapid focus updates
-  if (shouldThrottleFocus(odId)) {
-    return; // Silently drop - this is expected behavior
-  }
+  // Throttle using Redis (works across multiple servers)
+  if (await shouldThrottleFocus(odId)) return;
 
-  // Validate section
-  const validSections = ['status', 'severity', 'description', 'notes', 'assignees', 'action_items', 'commander'];
+  const validSections = [
+    'status', 'severity', 'description',
+    'notes', 'assignees', 'action_items', 'commander'
+  ];
   if (!validSections.includes(section)) {
     throw new Error(`Invalid section. Must be one of: ${validSections.join(', ')}`);
   }
 
-  // Update in-memory state
-  userFocusState.set(odId, {
-    incidentId,
-    section,
-    fieldId: fieldId || null,
-    color: socket.userColor,
-    name: socket.user.name,
-    lastUpdate: Date.now()
-  });
+  // Store in Redis with 5 min TTL (SETEX = atomic set + expire)
+  await redis.setex(
+    `focus:${odId}`,
+    FOCUS_TTL_SECONDS,
+    JSON.stringify({
+      incidentId,
+      section,
+      fieldId: fieldId || null,
+      color: socket.userColor,
+      name: socket.user.name,
+      lastUpdate: Date.now()
+    })
+  );
 
-  // Relay to others in room (not back to sender - they already know their own focus)
+  // Relay to others in room
   socket.to(`incident:${incidentId}`).emit('focus:updated', {
     userId: socket.user._id,
     section,
@@ -476,20 +458,11 @@ const handleFocusUpdate = async (socket, { incidentId, section, fieldId }) => {
   });
 };
 
-/**
- * Handle focus clear (user blurred/left a section)
- *
- * Event contract:
- * Client sends: { incidentId: string }
- * Server relays to room: { odId }
- */
 const handleFocusClear = async (socket, { incidentId }) => {
   const odId = socket.user._id.toString();
 
-  // Clear in-memory state
-  userFocusState.delete(odId);
+  await redis.del(`focus:${odId}`);
 
-  // Relay to room
   socket.to(`incident:${incidentId}`).emit('focus:cleared', {
     userId: socket.user._id
   });
@@ -497,38 +470,31 @@ const handleFocusClear = async (socket, { incidentId }) => {
 
 // ═══════════════════════════════════════════════════════════════
 // INCIDENT UPDATE HANDLERS
-// Server-authoritative: validate → persist → broadcast
+// Pattern: Authorize → Validate → Persist → Broadcast locally → Publish to Redis
+//
+// Why publishToAll after io.to().emit()?
+// - io.to().emit() → reaches clients on THIS server only
+// - publishToAll() → Redis delivers to ALL other servers
+// - Other servers relay to THEIR clients
+// - Result: ALL users on ALL servers receive the update ✅
 // ═══════════════════════════════════════════════════════════════
 
-/**
- * Handle status change request
- *
- * Event contract:
- * Client sends: { incidentId: string, status: string }
- * Server validates: role, status value, state transition
- * Server broadcasts: { incident, update } to room
- *
- * Status values: investigating → identified → monitoring → resolved
- *
- * State machine enforced: not all transitions are allowed.
- * Example: "resolved" can only go back to "investigating" (re-open)
- */
 const handleStatusUpdate = async (socket, { incidentId, status }) => {
   // 1. Authorize
   if (!canWrite(socket.user)) {
     throw new Error('Insufficient permissions');
   }
 
-  // 2. Validate input
+  // 2. Validate
   const validStatuses = ['investigating', 'identified', 'monitoring', 'resolved'];
   if (!validStatuses.includes(status)) {
     throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
   }
 
-  // 3. Get current incident to validate state transition
+  // 3. Get current incident for state machine validation
   const currentIncident = await incidentService.getIncidentById(incidentId);
 
-  // 4. Validate state transition (state machine enforcement)
+  // 4. Validate state transition
   if (!isValidTransition(currentIncident.status, status)) {
     throw new Error(
       `Invalid status transition: ${currentIncident.status} → ${status}. ` +
@@ -536,14 +502,12 @@ const handleStatusUpdate = async (socket, { incidentId, status }) => {
     );
   }
 
-  // 5. Persist via service (service handles business logic)
+  // 5. Persist
   const incident = await incidentService.updateStatus(
-    incidentId,
-    status,
-    socket.user._id
+    incidentId, status, socket.user._id
   );
 
-  // 6. Create the update record for timeline
+  // 6. Build audit record
   const update = {
     type: 'status_change',
     content: {
@@ -558,14 +522,16 @@ const handleStatusUpdate = async (socket, { incidentId, status }) => {
     createdAt: new Date()
   };
 
-  // 7. Broadcast confirmed update to ALL users in room (including sender)
-  io.to(`incident:${incidentId}`).emit('incident:updated', {
-    incidentId,
-    incident,
-    update
-  });
+  const eventData = { incidentId, incident, update };
 
-  // 8. Broadcast notification to ALL connected users
+  // 7. Broadcast to THIS server's clients
+  io.to(`incident:${incidentId}`).emit('incident:updated', eventData);
+
+  // 8. Publish to OTHER servers via Redis Pub/Sub
+  // Other servers will relay this to THEIR connected clients
+  await publishToAll(`incident:${incidentId}`, 'incident:updated', eventData);
+
+  // 9. Notify ALL connected users (all servers)
   io.emit('notification:new', {
     message: `${socket.user.name} changed status to ${status}`,
     icon: '📊',
@@ -578,41 +544,26 @@ const handleStatusUpdate = async (socket, { incidentId, status }) => {
   console.log(`Status updated: ${incidentId} ${currentIncident.status} → ${status} by ${socket.user.name}`);
 };
 
-/**
- * Handle add note request
- *
- * Event contract:
- * Client sends: { incidentId: string, text: string }
- * Server validates: role, text not empty
- * Server broadcasts: { update } to room
- *
- * Notes are investigation findings, observations, or decisions.
- * NOT chat messages or casual conversation.
- */
 const handleAddNote = async (socket, { incidentId, text }) => {
   // 1. Authorize
   if (!canWrite(socket.user)) {
     throw new Error('Insufficient permissions');
   }
 
-  // 2. Validate input
+  // 2. Validate
   if (!text || text.trim().length === 0) {
     throw new Error('Note text cannot be empty');
   }
-
   if (text.length > 2000) {
     throw new Error('Note text cannot exceed 2000 characters');
   }
 
-  // 3. Persist via service
+  // 3. Persist
   const update = await incidentService.addNote(
-    incidentId,
-    text.trim(),
-    socket.user._id
+    incidentId, text.trim(), socket.user._id
   );
 
-  // 4. Broadcast to room
-  io.to(`incident:${incidentId}`).emit('incident:noteAdded', {
+  const noteData = {
     incidentId,
     update: {
       _id: update._id,
@@ -625,9 +576,15 @@ const handleAddNote = async (socket, { incidentId, text }) => {
       },
       createdAt: update.createdAt
     }
-  });
+  };
 
-  // 5. Broadcast notification to ALL connected users
+  // 4. Broadcast to THIS server's clients
+  io.to(`incident:${incidentId}`).emit('incident:noteAdded', noteData);
+
+  // 5. Publish to OTHER servers via Redis Pub/Sub
+  await publishToAll(`incident:${incidentId}`, 'incident:noteAdded', noteData);
+
+  // 6. Notify ALL users
   io.emit('notification:new', {
     message: `${socket.user.name} added a note`,
     icon: '📝',
@@ -640,40 +597,27 @@ const handleAddNote = async (socket, { incidentId, text }) => {
   console.log(`Note added to ${incidentId} by ${socket.user.name}`);
 };
 
-/**
- * Handle user assignment request
- *
- * RBAC: Only admins can assign responders.
- * This is a coordination privilege, not a general write permission.
- *
- * Idempotency: If user is already assigned, the service throws
- * "User already assigned" - this prevents duplicate audit records.
- */
 const handleAssignment = async (socket, { incidentId, targetUserId }) => {
-  // 1. Authorize - ADMIN ONLY (not just canWrite)
+  // 1. Authorize - ADMIN ONLY
   if (socket.user.role !== 'admin') {
     throw new Error('Only administrators can assign responders');
   }
 
-  // 2. Validate input
+  // 2. Validate
   if (!targetUserId) {
     throw new Error('Target user ID required');
   }
 
-  // 3. Persist via service (idempotent - throws if already assigned)
+  // 3. Persist
   const incident = await incidentService.assignUser(
-    incidentId,
-    targetUserId,
-    socket.user._id
+    incidentId, targetUserId, socket.user._id
   );
 
-  // Find the assigned user details from populated incident
   const assignedUser = incident.assignees.find(
     a => a._id.toString() === targetUserId
   );
 
-  // 4. Broadcast to room
-  io.to(`incident:${incidentId}`).emit('incident:assigned', {
+  const assignData = {
     incidentId,
     incident,
     update: {
@@ -693,34 +637,34 @@ const handleAssignment = async (socket, { incidentId, targetUserId }) => {
       },
       createdAt: new Date()
     }
-  });
+  };
+
+  // 4. Broadcast to THIS server's clients
+  io.to(`incident:${incidentId}`).emit('incident:assigned', assignData);
+
+  // 5. Publish to OTHER servers via Redis Pub/Sub
+  await publishToAll(`incident:${incidentId}`, 'incident:assigned', assignData);
 
   console.log(`User ${targetUserId} assigned to ${incidentId} by ${socket.user.name}`);
 };
 
-/**
- * Handle add action item request
- */
 const handleActionItem = async (socket, { incidentId, text }) => {
   // 1. Authorize
   if (!canWrite(socket.user)) {
     throw new Error('Insufficient permissions');
   }
 
-  // 2. Validate input
+  // 2. Validate
   if (!text || text.trim().length === 0) {
     throw new Error('Action item text cannot be empty');
   }
 
-  // 3. Persist via service
+  // 3. Persist
   const update = await incidentService.addActionItem(
-    incidentId,
-    text.trim(),
-    socket.user._id
+    incidentId, text.trim(), socket.user._id
   );
 
-  // 4. Broadcast to room
-  io.to(`incident:${incidentId}`).emit('incident:actionItemAdded', {
+  const actionData = {
     incidentId,
     update: {
       _id: update._id,
@@ -736,33 +680,29 @@ const handleActionItem = async (socket, { incidentId, text }) => {
       },
       createdAt: update.createdAt
     }
-  });
+  };
+
+  // 4. Broadcast to THIS server's clients
+  io.to(`incident:${incidentId}`).emit('incident:actionItemAdded', actionData);
+
+  // 5. Publish to OTHER servers via Redis Pub/Sub
+  await publishToAll(`incident:${incidentId}`, 'incident:actionItemAdded', actionData);
 
   console.log(`Action item added to ${incidentId} by ${socket.user.name}`);
 };
 
-/**
- * Handle toggle action item completion
- *
- * Idempotency: Uses explicit boolean value (not toggle).
- * Calling with completed=true when already true is a no-op.
- * This is intentional for reliability on reconnects.
- */
 const handleToggleActionItem = async (socket, { incidentId, updateId, completed }) => {
   // 1. Authorize
   if (!canWrite(socket.user)) {
     throw new Error('Insufficient permissions');
   }
 
-  // 2. Persist via service
+  // 2. Persist
   const update = await incidentService.toggleActionItem(
-    updateId,
-    completed,
-    socket.user._id
+    updateId, completed, socket.user._id
   );
 
-  // 3. Broadcast to room
-  io.to(`incident:${incidentId}`).emit('incident:actionItemToggled', {
+  const toggleData = {
     incidentId,
     updateId,
     completed: update.content.completed,
@@ -770,7 +710,13 @@ const handleToggleActionItem = async (socket, { incidentId, updateId, completed 
       _id: socket.user._id,
       name: socket.user.name
     }
-  });
+  };
+
+  // 3. Broadcast to THIS server's clients
+  io.to(`incident:${incidentId}`).emit('incident:actionItemToggled', toggleData);
+
+  // 4. Publish to OTHER servers via Redis Pub/Sub
+  await publishToAll(`incident:${incidentId}`, 'incident:actionItemToggled', toggleData);
 
   console.log(`Action item ${updateId} toggled to ${completed} by ${socket.user.name}`);
 };
@@ -780,9 +726,7 @@ const handleToggleActionItem = async (socket, { incidentId, updateId, completed 
 // ═══════════════════════════════════════════════════════════════
 
 const getIO = () => {
-  if (!io) {
-    throw new Error('Socket.io not initialized');
-  }
+  if (!io) throw new Error('Socket.io not initialized');
   return io;
 };
 
