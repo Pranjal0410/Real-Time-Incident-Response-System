@@ -4,10 +4,12 @@
   "description": "Real-time incident response and coordination platform",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node src/cluster.js",
     "dev": "nodemon src/index.js",
     "server1": "PORT=3001 nodemon src/index.js",
-    "server2": "PORT=3002 nodemon src/index.js"
+    "server2": "PORT=3002 nodemon src/index.js",
+    "cluster": "node src/cluster.js",
+    "cluster:dev": "nodemon src/cluster.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

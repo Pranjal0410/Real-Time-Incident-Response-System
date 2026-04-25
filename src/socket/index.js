@@ -129,6 +129,7 @@ const FOCUS_THROTTLE_MS = 100;
 // Focus state TTL in seconds (5 minutes)
 // If user crashes without clean disconnect, state auto-clears
 const FOCUS_TTL_SECONDS = 300;
+const { createAdapter } = require('@socket.io/redis-adapter')
 
 // Color palette for user focus indicators (deterministic assignment)
 const FOCUS_COLORS = [
@@ -227,6 +228,41 @@ const initializeSocket = (httpServer) => {
       credentials: true
     }
   });
+  
+  const initializeSocket = (httpServer) => {
+    io = new Server(httpServer, {
+        cors: {
+            origin: config.cors.origin,
+            credentials: true
+        },
+        // WebSocket only — no polling (faster!)
+        transports: ['websocket', 'polling'],
+
+        // Optimize timeouts
+        pingTimeout: 20000,
+        pingInterval: 25000,
+    })
+
+    // ─────────────────────────────────────────
+    // REDIS ADAPTER — Multi-Worker Sync
+    // Ensures ALL workers share Socket.io state
+    // Worker 1's broadcast reaches Worker 2's clients
+    // Uses same Redis connection we already have!
+    // ─────────────────────────────────────────
+    const pubClient = redis
+    const subClient = redis.duplicate()
+
+    io.adapter(createAdapter(pubClient, subClient))
+    console.log(`✅ Redis Adapter initialized (Worker ${process.pid})`)
+
+    // Apply JWT authentication middleware
+    io.use(authenticateSocket)
+
+    // Initialize Redis Pub/Sub
+    initPubSub(io)
+
+    // ... rest of your existing code
+}
 
   // Apply JWT authentication middleware
   io.use(authenticateSocket);
