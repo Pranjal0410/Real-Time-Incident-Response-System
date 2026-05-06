@@ -29,35 +29,27 @@
 const cluster = require('cluster')
 const os = require('os')
 
-const NUM_CPUS = os.cpus().length  // 8 on your machine!
+// Production pe 1 worker — WebSocket stable rehta hai
+// Local pe 8 workers — testing ke liye
+const isProduction = process.env.NODE_ENV === 'production'
+const NUM_WORKERS = isProduction ? 1 : os.cpus().length
 
-if (cluster.isPrimary) {
+if (cluster.isPrimary && NUM_WORKERS > 1) {
     console.log(`🔧 Master process ${process.pid} running`)
-    console.log(`💻 CPU cores available: ${NUM_CPUS}`)
-    console.log(`🚀 Spawning ${NUM_CPUS} worker processes...`)
-    console.log('─'.repeat(50))
+    console.log(`💻 Spawning ${NUM_WORKERS} workers...`)
 
-    // Spawn one worker per CPU core
-    for (let i = 0; i < NUM_CPUS; i++) {
-        const worker = cluster.fork()
-        console.log(`✅ Worker ${i + 1} spawned (PID: ${worker.process.pid})`)
+    for (let i = 0; i < NUM_WORKERS; i++) {
+        cluster.fork()
     }
 
-    // Auto-restart crashed workers
-    cluster.on('exit', (worker, code, signal) => {
-        console.log(`💀 Worker ${worker.process.pid} died (code: ${code})`)
-        console.log(`🔄 Restarting worker...`)
-        const newWorker = cluster.fork()
-        console.log(`✅ New worker spawned (PID: ${newWorker.process.pid})`)
-    })
-
-    // Log when worker comes online
-    cluster.on('online', (worker) => {
-        console.log(`🟢 Worker ${worker.process.pid} is online`)
+    cluster.on('exit', (worker) => {
+        console.log(`💀 Worker ${worker.process.pid} died — restarting...`)
+        cluster.fork()
     })
 
 } else {
-    // Worker process — runs the actual server
-    console.log(`👷 Worker ${process.pid} starting...`)
+    // Production: direct server
+    // Local single worker: direct server
+    console.log(`👷 Running as single process (PID: ${process.pid})`)
     require('./index.js')
 }
