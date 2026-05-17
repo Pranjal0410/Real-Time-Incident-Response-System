@@ -112,4 +112,4 @@ function getInitials(name) {
   return name.slice(0, 2).toUpperCase();
 }
 
-export default memo(PresenceIndicator);
+export default PresenceIndicator;

@@ -106,4 +106,4 @@ export function IncidentTrendChart({ data }) {
   );
 }
 
-export default memo(IncidentTrendChart);
+export default IncidentTrendChart;

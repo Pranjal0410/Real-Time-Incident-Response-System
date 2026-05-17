@@ -1,4 +1,3 @@
-import { memo } from 'react';
 import { useNotificationStore } from '../stores';
 import { useClickOutside } from '../hooks';
 import { useRef } from 'react';
@@ -162,4 +161,4 @@ function formatTime(timestamp) {
   return new Date(timestamp).toLocaleDateString();
 }
 
-export default memo(NotificationCenter);
+export default NotificationCenter;

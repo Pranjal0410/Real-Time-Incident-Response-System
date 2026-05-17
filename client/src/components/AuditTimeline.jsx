@@ -1,4 +1,3 @@
-import { memo } from 'react';
 /**
 // memo wraps this component to prevent unnecessary re-renders when parent state changes
  * AuditTimeline Component
@@ -223,5 +222,5 @@ function StatusBadge({ status }) {
   );
 }
 
-export default memo(AuditTimeline);
+export default AuditTimeline;
 
