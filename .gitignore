@@ -14,3 +14,4 @@ npm-debug.log*
 # IDE
 .vscode/
 .idea/
+client/dist
