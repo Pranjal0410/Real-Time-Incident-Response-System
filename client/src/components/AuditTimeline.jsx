@@ -1,3 +1,4 @@
+import { memo } from 'react';
 /**
  * AuditTimeline Component
  * Renders immutable, chronological audit trail - Dark theme
@@ -221,4 +222,4 @@ function StatusBadge({ status }) {
   );
 }
 
-export default AuditTimeline;
+export default memo(AuditTimeline);
