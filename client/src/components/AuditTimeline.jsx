@@ -1,5 +1,6 @@
 import { memo } from 'react';
 /**
+// memo wraps this component to prevent unnecessary re-renders when parent state changes
  * AuditTimeline Component
  * Renders immutable, chronological audit trail - Dark theme
  */
