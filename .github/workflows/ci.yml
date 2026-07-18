@@ -26,4 +26,3 @@ jobs:
 
       - name: Build check
         run: cd client && npm run build
-EOF
