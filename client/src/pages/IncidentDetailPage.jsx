@@ -1,16 +1,15 @@
 /**
- * Incident Detail Page
- * THE MOST IMPORTANT PAGE - This sells the project
+ * IncidentDetailPage — the incident room.
  *
- * DEMONSTRATES:
- * - Real-time updates via Socket.io
- * - Presence awareness (who's viewing)
- * - Focus indicators (who's editing what)
- * - Server-authoritative state (no optimistic updates)
- * - Role-based UI degradation
- * - Immutable audit timeline
+ * Restructured from one long stack of full-width panels into a working layout:
+ * the investigation (notes, action items, timeline) holds the main column,
+ * while the facts an operator glances at repeatedly — status, severity,
+ * commander, responders, elapsed time — live in a sticky rail that stays put
+ * as the timeline grows.
  */
 import { useParams, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { ArrowLeft, Star, Warning, UserCircle, NotePencil } from '@phosphor-icons/react';
 import { useIncidentStore, useAuthStore } from '../stores';
 import { useIncidentRoom } from '../hooks';
 import {
@@ -24,237 +23,282 @@ import {
   AssignResponder,
   IncidentMetaStrip,
   ReadOnlyBanner,
-  CopyIncidentSummary
+  CopyIncidentSummary,
 } from '../components';
 import { AuditTimeline } from '../components/AuditTimeline';
+import { SeverityBadge } from '../components/ui';
+import { Skeleton } from '../components/ui/Skeleton';
+import { SEVERITY_HINT } from '../constants/signals';
 
-const SEVERITY_COLORS = {
-  critical: '#EF4444',
-  high: '#F59E0B',
-  medium: '#3B82F6',
-  low: '#10B981'
-};
+function DetailSkeleton() {
+  return (
+    <div aria-label="Loading incident" role="status">
+      <Skeleton width={260} height={22} radius={7} />
+      <div className="mt-5 grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4">
+        <div className="flex flex-col gap-4">
+          <Skeleton width="100%" height={180} radius={12} />
+          <Skeleton width="100%" height={240} radius={12} />
+        </div>
+        <Skeleton width="100%" height={320} radius={12} />
+      </div>
+      <span className="sr-only">Loading incident</span>
+    </div>
+  );
+}
 
 export function IncidentDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  // Join incident room and fetch data
   const { isLoading, error } = useIncidentRoom(id);
 
-  // Get incident data from store
   const incident = useIncidentStore((state) => state.activeIncident);
   const updates = useIncidentStore((state) => state.activeIncidentUpdates);
-
   const user = useAuthStore((state) => state.user);
 
   if (isLoading) {
     return (
-      <AppLayout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin inline-block w-8 h-8 border-2 border-accent border-t-transparent rounded-full mb-4"></div>
-            <p className="text-secondary">Loading incident...</p>
-          </div>
+      <AppLayout title="Incident">
+        <DetailSkeleton />
+      </AppLayout>
+    );
+  }
+
+  if (error || !incident) {
+    return (
+      <AppLayout title="Incident">
+        <div className="empty-state" style={{ marginTop: 40 }}>
+          <Warning size={26} className="empty-state__icon" />
+          <p className="empty-state__title">
+            {error ? 'Could not open this incident' : 'Incident not found'}
+          </p>
+          <p className="empty-state__description">
+            {error || 'It may have been removed, or the link may be wrong.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('/incidents')}
+            className="btn btn--secondary btn--sm mt-4"
+          >
+            <ArrowLeft size={13} />
+            Back to incidents
+          </button>
         </div>
       </AppLayout>
     );
   }
 
-  if (error) {
-    return (
-      <AppLayout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="text-red-500 mb-4">{error}</div>
-            <button
-              onClick={() => navigate('/incidents')}
-              className="btn btn--secondary"
-            >
-              Back to Dashboard
-            </button>
-          </div>
-        </div>
-      </AppLayout>
-    );
-  }
-
-  if (!incident) {
-    return (
-      <AppLayout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-secondary">Incident not found</div>
-        </div>
-      </AppLayout>
-    );
-  }
+  const notes = updates.filter((u) => u.type === 'note');
 
   return (
-    <AppLayout>
-      {/* Header Section */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
+    <AppLayout title="Incident">
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}
+      >
+        {/* Header */}
+        <div className="flex items-start gap-3 mb-1">
           <button
+            type="button"
             onClick={() => navigate('/incidents')}
-            className="btn btn--ghost"
+            className="btn btn--ghost btn--sm btn--icon mt-0.5 flex-shrink-0"
+            aria-label="Back to incidents"
+            title="Back to incidents"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back
+            <ArrowLeft size={16} />
           </button>
-          <h1 className="text-xl font-bold text-primary">{incident.title}</h1>
-          <CopyIncidentSummary incident={incident} updates={updates} />
-        </div>
-        <div className="flex items-center gap-3">
-          <RoleBadge />
-        </div>
-      </div>
 
-      {/* Read-only banner for viewers */}
-      <ReadOnlyBanner />
-
-      {/* Presence Bar */}
-      <div className="panel mb-6" style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--accent-muted)' }}>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="text-sm font-medium text-accent">Live Session</span>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[21px] font-semibold tracking-tight text-primary leading-snug">
+              {incident.title}
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <SeverityBadge severity={incident.severity} />
+              <span className="text-xs text-muted">{SEVERITY_HINT[incident.severity]}</span>
+            </div>
           </div>
-          <div className="h-4 w-px bg-border-primary"></div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <CopyIncidentSummary incident={incident} updates={updates} />
+            <RoleBadge />
+          </div>
+        </div>
+
+        <ReadOnlyBanner />
+
+        {/* Live session strip — presence plus elapsed metadata in one band */}
+        <div
+          className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2.5 rounded-[10px] mt-4"
+          style={{ background: 'var(--bg-surface)', border: '1px solid var(--line)' }}
+        >
+          <span className="flex items-center gap-2 text-xs font-medium" style={{ color: 'var(--signal-low)' }}>
+            <span className="signal-dot signal-dot--pulse" />
+            Live session
+          </span>
+          <span className="w-px h-4" style={{ background: 'var(--line)' }} />
           <PresenceIndicator incidentId={id} />
         </div>
-      </div>
 
-      {/* Incident Meta Strip */}
-      <IncidentMetaStrip incident={incident} updates={updates} />
+        <IncidentMetaStrip incident={incident} updates={updates} />
 
-      {/* Status Row */}
-      <div className="panel mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Status */}
-          <div>
-            <label className="label">Status</label>
-            <StatusSelector incidentId={id} currentStatus={incident.status} />
-            <div className="mt-3">
-              <StatusProgression currentStatus={incident.status} />
-            </div>
-          </div>
-
-          {/* Severity */}
-          <div>
-            <label className="label">Severity</label>
-            <span
-              className="badge"
-              style={{
-                backgroundColor: `${SEVERITY_COLORS[incident.severity]}20`,
-                color: SEVERITY_COLORS[incident.severity]
-              }}
-            >
-              {incident.severity.charAt(0).toUpperCase() + incident.severity.slice(1)}
-            </span>
-          </div>
-
-          {/* Commander */}
-          <div>
-            <label className="label">Commander</label>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center text-white font-medium">
-                  {incident.commander?.name?.charAt(0) || '?'}
-                </div>
-                {incident.commander && (
-                  <span className="absolute -top-1 -right-1 text-xs" title="Incident Commander">⭐</span>
-                )}
-              </div>
-              <div>
-                <span className="font-medium text-primary">
-                  {incident.commander?.name || 'Unassigned'}
-                </span>
-                {incident.commander && (
-                  <span className="text-xs text-muted ml-2">Commander</span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Description */}
-        {incident.description && (
-          <div className="mt-6 pt-6 border-t">
-            <label className="label">Description</label>
-            <p className="text-secondary">{incident.description}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Notes & Action Items Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Notes Panel */}
-        <div className="panel">
-          <h3 className="text-lg font-semibold text-primary mb-4">Investigation Notes</h3>
-          <NoteInput incidentId={id} />
-          <div className="mt-4 space-y-3 max-h-64 overflow-y-auto">
-            {updates
-              .filter((u) => u.type === 'note')
-              .map((note) => (
-                <div key={note._id} className="border-l-2 border-accent pl-3 py-1">
-                  <p className="text-primary">{note.content.text}</p>
-                  <p className="text-xs text-muted mt-1">
-                    {note.userId?.name || 'Unknown'} •{' '}
-                    {new Date(note.createdAt).toLocaleTimeString()}
-                  </p>
-                </div>
-              ))}
-            {updates.filter((u) => u.type === 'note').length === 0 && (
-              <div className="empty-state">
-                <p className="empty-state__title">No findings recorded yet</p>
-                <p className="empty-state__description">Add observations, logs, or hypotheses during investigation.</p>
-              </div>
+        {/* Working layout: investigation left, facts in a sticky rail right */}
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
+          <div className="flex flex-col gap-4 min-w-0">
+            {incident.description && (
+              <section className="panel">
+                <h2 className="panel__title mb-2">Summary</h2>
+                <p className="text-[14.5px] text-secondary leading-relaxed" style={{ maxWidth: '68ch' }}>
+                  {incident.description}
+                </p>
+              </section>
             )}
-          </div>
-        </div>
 
-        {/* Action Items Panel */}
-        <div className="panel">
-          <ActionItemList incidentId={id} />
-        </div>
-      </div>
-
-      {/* Assignees */}
-      <div className="panel mb-6">
-        <h3 className="text-lg font-semibold text-primary mb-4">Assigned Responders</h3>
-        {incident.assignees && incident.assignees.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {incident.assignees.map((assignee) => (
-              <div
-                key={assignee._id}
-                className="flex items-center gap-2 bg-tertiary px-3 py-1 rounded-full"
-              >
-                <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center text-white text-xs font-medium">
-                  {assignee.name?.charAt(0) || '?'}
-                </div>
-                <span className="text-sm text-primary">{assignee.name}</span>
-                <span className="text-xs text-muted">Working</span>
+            <section className="panel panel--flush">
+              <div className="panel__header">
+                <h2 className="panel__title">Investigation notes</h2>
+                <span className="text-xs text-muted tabular">{notes.length}</span>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-state">
-            <p className="empty-state__title">No responders assigned</p>
-            <p className="empty-state__description">Assign team members to coordinate incident response.</p>
-          </div>
-        )}
+              <div className="p-4">
+                <NoteInput incidentId={id} />
+                <div className="mt-4 flex flex-col gap-3 max-h-80 overflow-y-auto">
+                  {notes.length === 0 ? (
+                    <div className="empty-state" style={{ padding: '28px 20px' }}>
+                      <NotePencil size={22} className="empty-state__icon" />
+                      <p className="empty-state__title">No findings recorded yet</p>
+                      <p className="empty-state__description">
+                        Log observations, log lines and ruled-out hypotheses as you go.
+                      </p>
+                    </div>
+                  ) : (
+                    notes.map((note) => (
+                      <article
+                        key={note._id}
+                        className="pl-3 py-1"
+                        style={{ borderLeft: '2px solid var(--line-strong)' }}
+                      >
+                        <p className="text-[14.5px] text-primary leading-relaxed">
+                          {note.content.text}
+                        </p>
+                        <p className="text-[12px] text-muted mt-1.5">
+                          {note.userId?.name || 'Unknown'}
+                          {' · '}
+                          <time dateTime={note.createdAt} className="tabular">
+                            {new Date(note.createdAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </time>
+                        </p>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </div>
+            </section>
 
-        {/* Admin-only assignment control */}
-        <AssignResponder incidentId={id} currentAssignees={incident.assignees || []} />
-      </div>
+            <section className="panel">
+              <ActionItemList incidentId={id} />
+            </section>
 
-      {/* Audit Timeline */}
-      <div className="panel">
-        <h3 className="text-lg font-semibold text-primary mb-4">Audit Timeline</h3>
-        <AuditTimeline updates={updates} />
-      </div>
+            <section className="panel panel--flush">
+              <div className="panel__header">
+                <h2 className="panel__title">Audit timeline</h2>
+                <span className="text-xs text-muted tabular">
+                  {updates.length} {updates.length === 1 ? 'event' : 'events'}
+                </span>
+              </div>
+              <div className="p-4">
+                <AuditTimeline updates={updates} />
+              </div>
+            </section>
+          </div>
+
+          {/* Sticky rail */}
+          <div className="flex flex-col gap-4 xl:sticky" style={{ top: 'calc(var(--topbar-h) + 16px)' }}>
+            <section className="panel">
+              <h2 className="label" style={{ marginBottom: 10 }}>
+                Status
+              </h2>
+              <StatusSelector incidentId={id} currentStatus={incident.status} />
+              <div className="mt-4">
+                <StatusProgression currentStatus={incident.status} />
+              </div>
+            </section>
+
+            <section className="panel">
+              <h2 className="label" style={{ marginBottom: 10 }}>
+                Commander
+              </h2>
+              {incident.commander ? (
+                <div className="flex items-center gap-2.5">
+                  <span className="relative flex-shrink-0">
+                    <span className="sidebar__user-avatar" style={{ width: 32, height: 32 }}>
+                      {incident.commander.name?.charAt(0)?.toUpperCase() || '?'}
+                    </span>
+                    <Star
+                      size={11}
+                      weight="fill"
+                      className="absolute -top-1 -right-1"
+                      style={{ color: 'var(--signal-high)' }}
+                      aria-label="Incident commander"
+                    />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[14.5px] font-medium text-primary truncate">
+                      {incident.commander.name}
+                    </p>
+                    <p className="text-[12px] text-muted">Incident commander</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[14px] text-muted flex items-center gap-2">
+                  <UserCircle size={17} />
+                  No commander assigned
+                </p>
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="label" style={{ marginBottom: 0 }}>
+                  Responders
+                </h2>
+                <span className="text-xs text-muted tabular">
+                  {incident.assignees?.length || 0}
+                </span>
+              </div>
+
+              {incident.assignees?.length > 0 ? (
+                <ul className="flex flex-wrap gap-1.5">
+                  {incident.assignees.map((assignee) => (
+                    <li
+                      key={assignee._id}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-full"
+                      style={{ background: 'var(--bg-raised)', border: '1px solid var(--line-strong)' }}
+                    >
+                      <span
+                        className="w-4 h-4 rounded-full grid place-items-center text-[9px] font-semibold flex-shrink-0"
+                        style={{ background: 'var(--signal-low)', color: '#04150e' }}
+                        aria-hidden="true"
+                      >
+                        {assignee.name?.charAt(0)?.toUpperCase() || '?'}
+                      </span>
+                      <span className="text-xs text-primary">{assignee.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[14px] text-muted">
+                  Nobody assigned yet. Assign responders so ownership is unambiguous.
+                </p>
+              )}
+
+              <AssignResponder incidentId={id} currentAssignees={incident.assignees || []} />
+            </section>
+          </div>
+        </div>
+      </motion.div>
     </AppLayout>
   );
 }

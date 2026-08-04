@@ -51,14 +51,14 @@ export function NoteInput({ incidentId }) {
         </div>
       )}
 
+      {/* `ringColor` is not a valid CSS property, so the previous inline style
+          silently did nothing. The co-editing highlight is a real box-shadow
+          in the focused user's presence colour. */}
       <div
-        className={clsx(
-          'border rounded-lg overflow-hidden transition-colors',
-          focusedUsers.length > 0 && 'ring-2'
-        )}
+        className="rounded-[10px] overflow-hidden transition-shadow"
         style={{
-          borderColor: 'var(--border-primary)',
-          ringColor: focusedUsers[0]?.color
+          border: '1px solid var(--line-strong)',
+          boxShadow: focusedUsers[0]?.color ? `0 0 0 2px ${focusedUsers[0].color}66` : 'none',
         }}
       >
         <textarea
@@ -66,24 +66,25 @@ export function NoteInput({ incidentId }) {
           onChange={(e) => setText(e.target.value)}
           onFocus={onFocus}
           onBlur={onBlur}
-          placeholder="Add observations, logs, or findings..."
-          className="w-full p-3 bg-tertiary text-primary resize-none focus:outline-none"
-          style={{ backgroundColor: 'var(--bg-tertiary)' }}
+          placeholder="Add observations, log lines, or findings…"
+          className="w-full p-3 text-primary resize-none focus:outline-none text-[14.5px] leading-relaxed"
+          style={{ backgroundColor: 'var(--bg-base)', border: 'none' }}
           rows={3}
           maxLength={2000}
           disabled={isSubmitting}
         />
 
-        <div className="flex justify-between items-center px-3 py-2 border-t" style={{ backgroundColor: 'var(--bg-tertiary)', borderColor: 'var(--border-primary)' }}>
-          <span className="text-xs text-muted">
-            {text.length}/2000 characters
-          </span>
+        <div
+          className="flex justify-between items-center px-3 py-2"
+          style={{ backgroundColor: 'var(--bg-raised)', borderTop: '1px solid var(--line)' }}
+        >
+          <span className="text-[12px] text-muted tabular">{text.length}/2000</span>
           <button
             type="submit"
             disabled={!text.trim() || isSubmitting}
             className="btn btn--primary btn--sm"
           >
-            {isSubmitting ? 'Adding...' : 'Add Note'}
+            {isSubmitting ? 'Adding…' : 'Add note'}
           </button>
         </div>
       </div>

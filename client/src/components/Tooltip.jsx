@@ -28,15 +28,23 @@ export function Tooltip({ children, content, side = 'top' }) {
 
       {isVisible && (
         <div className={`absolute ${sideClasses[side]} z-50 whitespace-nowrap pointer-events-none`}>
-          <div className="bg-gray-900 text-white text-xs px-3 py-2 rounded shadow-lg border border-gray-700">
+          <div
+            className="text-xs px-2.5 py-1.5 rounded-md"
+            style={{
+              background: 'var(--bg-overlay)',
+              color: 'var(--text-hi)',
+              border: '1px solid var(--line-strong)',
+              boxShadow: '0 12px 32px -8px rgba(4, 6, 9, 0.75)',
+            }}
+          >
             {content}
             <div
-              className={`absolute w-0 h-0 border-gray-900 ${arrowClasses[side]}`}
+              className={`absolute w-0 h-0 ${arrowClasses[side]}`}
               style={{
-                borderBottomColor: side === 'top' ? '#111827' : 'transparent',
-                borderTopColor: side === 'bottom' ? '#111827' : 'transparent',
-                borderLeftColor: side === 'right' ? '#111827' : 'transparent',
-                borderRightColor: side === 'left' ? '#111827' : 'transparent'
+                borderBottomColor: side === 'top' ? 'var(--bg-overlay)' : 'transparent',
+                borderTopColor: side === 'bottom' ? 'var(--bg-overlay)' : 'transparent',
+                borderLeftColor: side === 'right' ? 'var(--bg-overlay)' : 'transparent',
+                borderRightColor: side === 'left' ? 'var(--bg-overlay)' : 'transparent',
               }}
             />
           </div>
