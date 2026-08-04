@@ -1,65 +1,102 @@
 /**
- * TopBar Component
- * Top bar with search, notifications, and connection status
+ * TopBar
+ * Page title, search, live connection state, notifications.
+ * The search field advertises the ⌘K palette so the shortcut is discoverable
+ * rather than hidden.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { List, Bell, MagnifyingGlass } from '@phosphor-icons/react';
 import { ConnectionStatus } from '../ConnectionStatus';
 import { NotificationCenter } from '../NotificationCenter';
 import { useNotificationStore } from '../../stores';
 
-export function TopBar({ title, searchQuery, onSearchChange }) {
+export function TopBar({ title, actions, searchQuery, onSearchChange, onMenuClick }) {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const unreadCount = useNotificationStore((state) => state.getUnreadCount());
+  const searchRef = useRef(null);
+
+  // "/" focuses search, the way every incident tool the team already uses does.
+  useEffect(() => {
+    if (!onSearchChange) return undefined;
+    const onKeyDown = (event) => {
+      const tag = document.activeElement?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable;
+      if (event.key === '/' && !typing && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onSearchChange]);
 
   return (
     <>
-      <div className="topbar">
-        {/* Page Title */}
-        <div className="flex items-center gap-4">
-          {title && <h1 className="text-xl font-bold text-primary">{title}</h1>}
-        </div>
+      <header className="topbar">
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="btn btn--ghost btn--icon btn--sm lg:hidden"
+          aria-label="Open navigation"
+        >
+          <List size={18} />
+        </button>
 
-        {/* Search */}
-        {onSearchChange && (
+        {title && (
+          <h1 className="text-[16px] font-semibold text-primary truncate">{title}</h1>
+        )}
+
+        {onSearchChange ? (
           <div className="topbar__search">
-            <svg className="topbar__search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+            <MagnifyingGlass className="topbar__search-icon" size={15} />
             <input
-              type="text"
-              placeholder="Search incidents..."
+              ref={searchRef}
+              type="search"
+              placeholder="Search incidents"
               value={searchQuery || ''}
               onChange={(e) => onSearchChange(e.target.value)}
               className="topbar__search-input"
+              aria-label="Search incidents"
             />
+            {!searchQuery && (
+              <span
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none"
+                aria-hidden="true"
+              >
+                <kbd className="kbd">/</kbd>
+              </span>
+            )}
           </div>
+        ) : (
+          <div className="ml-auto" />
         )}
 
-        {/* Actions */}
         <div className="topbar__actions">
+          {actions}
+
           <ConnectionStatus />
 
-          {/* Notifications */}
+          <div className="hidden md:block w-px h-5" style={{ background: 'var(--line)' }} />
+
           <button
-            onClick={() => setNotificationOpen(!notificationOpen)}
-            className="topbar__notification relative"
-            title="Notifications"
+            type="button"
+            onClick={() => setNotificationOpen((open) => !open)}
+            className="topbar__notification"
+            aria-label={
+              unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'
+            }
+            aria-expanded={notificationOpen}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-            </svg>
+            <Bell size={17} />
             {unreadCount > 0 && (
-              <span
-                className="topbar__notification-badge absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center"
-              >
+              <span className="topbar__notification-badge">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Notification Center Popup */}
       <NotificationCenter
         isOpen={notificationOpen}
         onClose={() => setNotificationOpen(false)}
