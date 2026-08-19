@@ -1,0 +1,104 @@
+{
+  "reqflow": 1,
+  "name": "Real-Time-Incident-Response-System",
+  "baseUrl": "http://localhost:3001",
+  "variables": [
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "name",
+      "value": "Capture Test"
+    },
+    {
+      "key": "id",
+      "value": "6a860eee15145a5cafb43d39"
+    },
+    {
+      "key": "password",
+      "value": ""
+    }
+  ],
+  "requests": [
+    {
+      "name": "POST /api/auth/login",
+      "method": "POST",
+      "url": "http://localhost:3001/api/auth/login",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json",
+          "enabled": true
+        }
+      ],
+      "body": "{\"email\":\"capture@test.com\",\"password\":\"{{password}}\"}",
+      "pathParams": {},
+      "tests": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "value": "200"
+        }
+      ],
+      "captures": [
+        {
+          "from": "token",
+          "name": "token"
+        },
+        {
+          "from": "user.name",
+          "name": "name"
+        },
+        {
+          "from": "user._id",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "GET /api/auth/me",
+      "method": "GET",
+      "url": "http://localhost:3001/api/auth/me",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json",
+          "enabled": true
+        },
+        {
+          "key": "Authorization",
+          "value": "Bearer {{token}}",
+          "enabled": true
+        }
+      ],
+      "body": "",
+      "pathParams": {},
+      "tests": [],
+      "captures": []
+    },
+    {
+      "name": "GET /api/users/:id",
+      "method": "GET",
+      "url": "http://localhost:3001/api/users/:id",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json",
+          "enabled": true
+        },
+        {
+          "key": "Authorization",
+          "value": "Bearer {{token}}",
+          "enabled": true
+        }
+      ],
+      "body": "",
+      "pathParams": {
+        "id": "{{id}}"
+      },
+      "tests": [],
+      "captures": []
+    }
+  ]
+}
