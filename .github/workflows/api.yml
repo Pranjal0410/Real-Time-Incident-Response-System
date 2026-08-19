@@ -107,11 +107,19 @@ jobs:
 
       # The runner lives in the ReqFlow repository. The collection lives here,
       # beside the code it tests.
+      #
+      # A job's own token can only see the repository it is running in, so while
+      # ReqFlow is private this needs one that can read it — a token with read
+      # access to that repository, stored here as REQFLOW_TOKEN. The first run
+      # failed on exactly this, with "Not Found", which is what GitHub says
+      # instead of "you cannot see that". If ReqFlow is ever made public the
+      # secret can go and the fallback covers it.
       - name: Get the ReqFlow runner
         uses: actions/checkout@v4
         with:
           repository: Pranjal0410/ReqFlow
           path: .reqflow
+          token: ${{ secrets.REQFLOW_TOKEN || github.token }}
 
       - name: Install the runner
         working-directory: .reqflow/cli
