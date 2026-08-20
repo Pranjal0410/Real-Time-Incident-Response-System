@@ -15,3 +15,7 @@ npm-debug.log*
 .vscode/
 .idea/
 client/dist
+
+# Redis writes its snapshot wherever the server was started from, so it lands
+# next to the code. It is data, and a stale copy of it is worse than none.
+dump.rdb
