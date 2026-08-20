@@ -9,11 +9,11 @@
     },
     {
       "key": "name",
-      "value": "Capture Test"
+      "value": "Admin"
     },
     {
       "key": "id",
-      "value": "6a860eee15145a5cafb43d39"
+      "value": "6a3cef83f6084f4f44b02ca2"
     },
     {
       "key": "password",
@@ -30,9 +30,14 @@
           "key": "Content-Type",
           "value": "application/json",
           "enabled": true
+        },
+        {
+          "key": "Authorization",
+          "value": "",
+          "enabled": true
         }
       ],
-      "body": "{\"email\":\"capture@test.com\",\"password\":\"{{password}}\"}",
+      "body": "{\"email\":\"admin@demo.com\",\"password\":\"{{password}}\"}",
       "pathParams": {},
       "tests": [
         {
@@ -74,7 +79,13 @@
       ],
       "body": "",
       "pathParams": {},
-      "tests": [],
+      "tests": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "value": "200"
+        }
+      ],
       "captures": []
     },
     {
@@ -97,7 +108,13 @@
       "pathParams": {
         "id": "{{id}}"
       },
-      "tests": [],
+      "tests": [
+        {
+          "field": "status",
+          "operator": "equals",
+          "value": "200"
+        }
+      ],
       "captures": []
     }
   ]
