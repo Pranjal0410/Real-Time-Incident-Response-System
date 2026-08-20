@@ -84,6 +84,11 @@
           "field": "status",
           "operator": "equals",
           "value": "200"
+        },
+        {
+          "field": "data.user.email",
+          "operator": "equals",
+          "value": "admin@demo.com"
         }
       ],
       "captures": []
@@ -113,6 +118,11 @@
           "field": "status",
           "operator": "equals",
           "value": "200"
+        },
+        {
+          "field": "data.user._id",
+          "operator": "exists",
+          "value": ""
         }
       ],
       "captures": []
