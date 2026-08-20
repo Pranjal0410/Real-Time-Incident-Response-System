@@ -1,45 +1,52 @@
 /**
- * ConnectionStatus Component
- * Shows socket connection state with tooltips - Dark theme
+ * ConnectionStatus
+ * Socket state, expressed in the shared signal vocabulary:
+ * emerald = connected, amber = connecting, red = dropped.
+ *
+ * The label collapses on narrow viewports; the dot and its title attribute
+ * always remain, so the state is never lost.
  */
 import { useSocketStore } from '../stores';
+
+const STATES = {
+  connected: {
+    color: 'var(--signal-low)',
+    label: 'Live',
+    title: 'Connected. Real-time updates are streaming.',
+    pulse: true,
+  },
+  connecting: {
+    color: 'var(--signal-high)',
+    label: 'Connecting',
+    title: 'Establishing the real-time connection to the server.',
+    pulse: true,
+  },
+  offline: {
+    color: 'var(--signal-critical)',
+    label: 'Offline',
+    title: 'No real-time connection. Incident data may be stale.',
+    pulse: false,
+  },
+};
 
 export function ConnectionStatus() {
   const isConnected = useSocketStore((state) => state.isConnected);
   const isConnecting = useSocketStore((state) => state.isConnecting);
   const error = useSocketStore((state) => state.connectionError);
 
-  if (isConnected) {
-    return (
-      <div
-        className="flex items-center gap-2 text-sm cursor-default"
-        title="Real-time updates are active"
-      >
-        <div className="w-2 h-2 rounded-full bg-green-500" />
-        <span className="text-green-500">Connected</span>
-      </div>
-    );
-  }
-
-  if (isConnecting) {
-    return (
-      <div
-        className="flex items-center gap-2 text-sm cursor-default"
-        title="Establishing connection to server..."
-      >
-        <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-        <span className="text-yellow-500">Connecting...</span>
-      </div>
-    );
-  }
+  const key = isConnected ? 'connected' : isConnecting ? 'connecting' : 'offline';
+  const state = STATES[key];
 
   return (
     <div
-      className="flex items-center gap-2 text-sm cursor-default"
-      title="Waiting for server connection. Some features may be unavailable."
+      className="flex items-center gap-1.5 text-xs font-medium cursor-default select-none"
+      style={{ color: state.color }}
+      title={key === 'offline' && error ? `${state.title} (${error})` : state.title}
+      role="status"
+      aria-live="polite"
     >
-      <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-      <span className="text-red-500">{error || 'Disconnected'}</span>
+      <span className={`signal-dot ${state.pulse ? 'signal-dot--pulse' : ''}`} />
+      <span className="hidden md:inline">{state.label}</span>
     </div>
   );
 }

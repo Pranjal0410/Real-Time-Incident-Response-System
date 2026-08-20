@@ -1,59 +1,57 @@
 /**
- * StatusProgression Component
- * Visual representation of incident status state machine - Dark theme
+ * StatusProgression
+ * Where the incident sits in the investigating → identified → monitoring →
+ * resolved flow.
+ *
+ * The old version rendered four saturated pills joined by chevrons, which put
+ * every signal hue on screen at once and made the *current* state no louder
+ * than the rest. This is a segmented rail: completed and current segments are
+ * filled, upcoming ones are hairlines, and only the current step is labelled in
+ * colour — so a glance answers "how far along is this?" rather than "what are
+ * the four possible states?".
  */
-
-const STATUSES = [
-  { value: 'investigating', label: 'Investigating', color: '#EF4444' },
-  { value: 'identified', label: 'Identified', color: '#F59E0B' },
-  { value: 'monitoring', label: 'Monitoring', color: '#3B82F6' },
-  { value: 'resolved', label: 'Resolved', color: '#10B981' }
-];
+import { STATUS_ORDER, STATUS_LABEL, STATUS_HINT, SIGNAL_VAR } from '../constants/signals';
 
 export function StatusProgression({ currentStatus }) {
-  const currentIndex = STATUSES.findIndex(s => s.value === currentStatus);
+  const currentIndex = STATUS_ORDER.indexOf(currentStatus);
+  const currentColor = SIGNAL_VAR[currentStatus] || 'var(--text-mid)';
 
   return (
-    <div className="status-progression flex items-center gap-1 text-xs">
-      {STATUSES.map((status, index) => {
-        const isCurrent = status.value === currentStatus;
-        const isPast = index < currentIndex;
-
-        return (
-          <div key={status.value} className="flex items-center">
-            {/* Status step */}
-            <div
-              className={`
-                px-2 py-1 rounded-full font-medium transition-all
-                ${isCurrent
-                  ? 'text-white shadow-sm'
-                  : isPast
-                    ? 'text-white opacity-60'
-                    : 'text-muted'
-                }
-              `}
+    <div className="status-progression">
+      <div
+        className="flex items-center gap-1"
+        role="img"
+        aria-label={`Step ${currentIndex + 1} of ${STATUS_ORDER.length}: ${
+          STATUS_LABEL[currentStatus] || currentStatus
+        }`}
+      >
+        {STATUS_ORDER.map((status, index) => {
+          const reached = index <= currentIndex;
+          return (
+            <span
+              key={status}
+              title={`${STATUS_LABEL[status]} — ${STATUS_HINT[status]}`}
+              className="flex-1 rounded-full transition-all duration-300"
               style={{
-                backgroundColor: isCurrent || isPast ? status.color : 'var(--bg-tertiary)'
+                height: index === currentIndex ? 4 : 3,
+                background: reached ? currentColor : 'var(--line-strong)',
+                opacity: reached && index < currentIndex ? 0.4 : 1,
               }}
-            >
-              {status.label}
-            </div>
+            />
+          );
+        })}
+      </div>
 
-            {/* Arrow connector */}
-            {index < STATUSES.length - 1 && (
-              <svg
-                className={`w-4 h-4 mx-1 ${index < currentIndex ? 'text-muted' : 'text-muted'}`}
-                style={{ opacity: index < currentIndex ? 0.6 : 0.3 }}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            )}
-          </div>
-        );
-      })}
+      <div className="flex items-baseline justify-between mt-2">
+        <span className="text-[13px] font-medium" style={{ color: currentColor }}>
+          {STATUS_LABEL[currentStatus] || currentStatus}
+        </span>
+        <span className="text-[12px] text-muted tabular">
+          Step {currentIndex + 1} of {STATUS_ORDER.length}
+        </span>
+      </div>
+
+      <p className="text-[12.5px] text-muted mt-1 leading-snug">{STATUS_HINT[currentStatus]}</p>
     </div>
   );
 }

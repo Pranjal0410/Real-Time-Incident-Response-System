@@ -39,11 +39,13 @@ export function PresenceIndicator({ incidentId }) {
             </div>
           }
         >
+          {/* Accent is a light token, so the label must be the dark on-accent
+              colour — `text-white` here would be white on white. */}
           <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium cursor-pointer hover:ring-2 hover:ring-offset-1"
+            className="w-7 h-7 rounded-[9px] flex items-center justify-center text-[10px] font-semibold cursor-pointer"
             style={{
-              backgroundColor: 'var(--accent-primary)',
-              '--ring-offset-color': 'var(--bg-secondary)'
+              backgroundColor: 'var(--accent)',
+              color: 'var(--accent-on)',
             }}
           >
             {getInitials(currentUser?.name)}
@@ -70,11 +72,11 @@ export function PresenceIndicator({ incidentId }) {
                   }
                 >
                   <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium border-2 cursor-pointer hover:ring-2 hover:ring-offset-1"
+                    className="w-7 h-7 rounded-[9px] flex items-center justify-center text-[10px] font-semibold border-2 cursor-pointer"
                     style={{
                       backgroundColor: user.color,
-                      borderColor: 'var(--bg-secondary)',
-                      '--ring-offset-color': 'var(--bg-secondary)'
+                      color: '#08090b',
+                      borderColor: 'var(--bg-surface)',
                     }}
                   >
                     {getInitials(user.name)}

@@ -1,35 +1,41 @@
 /**
- * Incident List Page (Dashboard)
- * Dashboard showing stats, charts, and incident list
+ * IncidentListPage — the incident queue.
+ *
+ * Now a distinct destination from the overview rather than the same route
+ * behind a second nav label. It is the dense working view: filter by severity
+ * and status, sort by any column, and open a row from the keyboard.
+ *
+ * Filters live in the URL, so a filtered queue is a shareable link — worth a
+ * lot when someone pastes "everything critical and unresolved" into a channel.
  */
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useIncidentStore, useAuthStore } from '../stores';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Warning, CaretUp, CaretDown, X, MagnifyingGlass } from '@phosphor-icons/react';
+import { useIncidentStore } from '../stores';
 import { incidentApi } from '../services/api';
+import { WriteGate, AppLayout, CreateIncidentModal } from '../components';
+import { SeverityBadge, StatusBadge, TableSkeleton } from '../components/ui';
 import {
-  WriteGate,
-  AppLayout,
-  StatCard,
-  IncidentTrendChart,
-  SeverityDistribution
-} from '../components';
+  SEVERITY_ORDER,
+  STATUS_ORDER,
+  SEVERITY_LABEL,
+  STATUS_LABEL,
+  SIGNAL_VAR,
+} from '../constants/signals';
 
-const SEVERITY_COLORS = {
-  critical: '#EF4444',
-  high: '#F59E0B',
-  medium: '#3B82F6',
-  low: '#10B981'
-};
-
-const STATUS_COLORS = {
-  investigating: '#EF4444',
-  identified: '#F59E0B',
-  monitoring: '#3B82F6',
-  resolved: '#10B981'
-};
+const COLUMNS = [
+  { key: 'title', label: 'Incident', sortable: true },
+  { key: 'severity', label: 'Severity', sortable: true, width: 118 },
+  { key: 'status', label: 'Status', sortable: true, width: 132 },
+  { key: 'commander', label: 'Commander', sortable: true, width: 160 },
+  { key: 'createdAt', label: 'Opened', sortable: true, width: 150 },
+];
 
 export function IncidentListPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const incidents = useIncidentStore((state) => state.incidents);
   const setIncidents = useIncidentStore((state) => state.setIncidents);
   const setIncidentsError = useIncidentStore((state) => state.setIncidentsError);
@@ -37,301 +43,341 @@ export function IncidentListPage() {
   const error = useIncidentStore((state) => state.incidentsError);
   const setLoading = useIncidentStore((state) => state.setIncidentsLoading);
 
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sort, setSort] = useState({ key: 'createdAt', direction: 'desc' });
+  const [showCreate, setShowCreate] = useState(searchParams.get('new') === '1');
+
+  const severityFilter = searchParams.get('severity');
+  const statusFilter = searchParams.get('status');
 
   useEffect(() => {
     const fetchIncidents = async () => {
       setLoading(true);
       try {
-        const { incidents } = await incidentApi.list();
-        setIncidents(incidents);
+        const { incidents: list } = await incidentApi.list();
+        setIncidents(list);
       } catch (err) {
         setIncidentsError(err.message);
       }
     };
-
     fetchIncidents();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Filter incidents based on search query
-  const filteredIncidents = incidents.filter(incident => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      incident.title?.toLowerCase().includes(query) ||
-      incident.description?.toLowerCase().includes(query) ||
-      incident.status?.toLowerCase().includes(query) ||
-      incident.severity?.toLowerCase().includes(query) ||
-      incident.commander?.name?.toLowerCase().includes(query)
-    );
-  });
+  useEffect(() => {
+    if (searchParams.get('new') === '1') setShowCreate(true);
+  }, [searchParams]);
 
-  // Calculate stats (from all incidents, not filtered)
-  const stats = {
-    total: incidents.length,
-    active: incidents.filter(i => i.status !== 'resolved').length,
-    critical: incidents.filter(i => i.severity === 'critical' && i.status !== 'resolved').length,
-    resolved: incidents.filter(i => i.status === 'resolved').length
+  /** Toggles a filter value in the URL; clicking the active one clears it. */
+  const toggleFilter = (param, value) => {
+    const next = new URLSearchParams(searchParams);
+    if (next.get(param) === value) {
+      next.delete(param);
+    } else {
+      next.set(param, value);
+    }
+    setSearchParams(next, { replace: true });
   };
 
+  const clearFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('severity');
+    next.delete('status');
+    setSearchParams(next, { replace: true });
+    setSearchQuery('');
+  };
+
+  const closeCreate = () => {
+    setShowCreate(false);
+    if (searchParams.get('new')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('new');
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  const counts = useMemo(() => {
+    const bySeverity = {};
+    const byStatus = {};
+    incidents.forEach((incident) => {
+      bySeverity[incident.severity] = (bySeverity[incident.severity] || 0) + 1;
+      byStatus[incident.status] = (byStatus[incident.status] || 0) + 1;
+    });
+    return { bySeverity, byStatus };
+  }, [incidents]);
+
+  const visible = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    const filtered = incidents.filter((incident) => {
+      if (severityFilter && incident.severity !== severityFilter) return false;
+      if (statusFilter && incident.status !== statusFilter) return false;
+      if (!query) return true;
+      return (
+        incident.title?.toLowerCase().includes(query) ||
+        incident.description?.toLowerCase().includes(query) ||
+        incident.status?.toLowerCase().includes(query) ||
+        incident.severity?.toLowerCase().includes(query) ||
+        incident.commander?.name?.toLowerCase().includes(query)
+      );
+    });
+
+    const direction = sort.direction === 'asc' ? 1 : -1;
+
+    return [...filtered].sort((a, b) => {
+      switch (sort.key) {
+        case 'severity':
+          // Rank order, not alphabetical — "critical" must outrank "high".
+          return (SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)) * direction;
+        case 'status':
+          return (STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status)) * direction;
+        case 'commander':
+          return (a.commander?.name || '~').localeCompare(b.commander?.name || '~') * direction;
+        case 'title':
+          return (a.title || '').localeCompare(b.title || '') * direction;
+        case 'createdAt':
+        default:
+          return (new Date(a.createdAt) - new Date(b.createdAt)) * direction;
+      }
+    });
+  }, [incidents, searchQuery, severityFilter, statusFilter, sort]);
+
+  const toggleSort = (key) => {
+    setSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: key === 'createdAt' ? 'desc' : 'asc' }
+    );
+  };
+
+  const hasFilters = Boolean(severityFilter || statusFilter || searchQuery.trim());
+
+  const openIncident = (id) => navigate(`/incidents/${id}`);
+
   return (
-    <AppLayout title="Dashboard" searchQuery={searchQuery} onSearchChange={setSearchQuery}>
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <StatCard
-          icon={
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          }
-          label="Total Incidents"
-          value={stats.total}
-          variant="accent"
-        />
-        <StatCard
-          icon={
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
-          label="Active Incidents"
-          value={stats.active}
-          variant="high"
-        />
-        <StatCard
-          icon={
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          }
-          label="Critical Active"
-          value={stats.critical}
-          variant="critical"
-        />
-        <StatCard
-          icon={
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
-          label="Resolved"
-          value={stats.resolved}
-          variant="low"
-        />
-      </div>
-
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <IncidentTrendChart />
-        <SeverityDistribution incidents={incidents} />
-      </div>
-
-      {/* Incidents Table Section */}
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold text-primary">Recent Incidents</h2>
+    <AppLayout
+      title="Incidents"
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      actions={
         <WriteGate>
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="btn btn--primary"
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="btn btn--primary btn--sm"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Create Incident
+            <Plus size={14} weight="bold" />
+            <span className="hidden sm:inline">Declare</span>
           </button>
         </WriteGate>
+      }
+    >
+      {/* Filter rail */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-4">
+        <span className="text-[12px] font-semibold uppercase tracking-wider text-muted mr-1">
+          Severity
+        </span>
+        {SEVERITY_ORDER.map((level) => (
+          <button
+            key={level}
+            type="button"
+            className="chip"
+            aria-pressed={severityFilter === level}
+            onClick={() => toggleFilter('severity', level)}
+            style={severityFilter === level ? { color: SIGNAL_VAR[level] } : undefined}
+          >
+            <span className="signal-dot" style={{ backgroundColor: SIGNAL_VAR[level] }} />
+            {SEVERITY_LABEL[level]}
+            <span className="chip__count">{counts.bySeverity[level] || 0}</span>
+          </button>
+        ))}
+
+        <span className="w-px h-5 mx-1.5 hidden sm:block" style={{ background: 'var(--line)' }} />
+
+        <span className="text-[12px] font-semibold uppercase tracking-wider text-muted mr-1">
+          Status
+        </span>
+        {STATUS_ORDER.map((state) => (
+          <button
+            key={state}
+            type="button"
+            className="chip"
+            aria-pressed={statusFilter === state}
+            onClick={() => toggleFilter('status', state)}
+            style={statusFilter === state ? { color: SIGNAL_VAR[state] } : undefined}
+          >
+            <span className="signal-dot" style={{ backgroundColor: SIGNAL_VAR[state] }} />
+            {STATUS_LABEL[state]}
+            <span className="chip__count">{counts.byStatus[state] || 0}</span>
+          </button>
+        ))}
+
+        {hasFilters && (
+          <button type="button" onClick={clearFilters} className="btn btn--ghost btn--sm ml-auto">
+            <X size={12} weight="bold" />
+            Clear
+          </button>
+        )}
       </div>
 
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-500 px-4 py-3 rounded-lg mb-4">
-          {error}
+        <div className="alert alert--error mb-4" role="alert">
+          <Warning size={16} weight="fill" className="flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">Could not load incidents</p>
+            <p className="opacity-80 mt-0.5">{error}</p>
+          </div>
         </div>
       )}
 
+      <p className="text-xs text-muted mb-2.5 tabular" role="status" aria-live="polite">
+        {isLoading
+          ? 'Loading incidents'
+          : `${visible.length} of ${incidents.length} ${incidents.length === 1 ? 'incident' : 'incidents'}`}
+      </p>
+
       {isLoading ? (
-        <div className="text-center py-8 text-secondary">
-          <div className="animate-spin inline-block w-8 h-8 border-2 border-accent border-t-transparent rounded-full mb-4"></div>
-          <p>Loading incidents...</p>
-        </div>
-      ) : filteredIncidents.length === 0 ? (
+        <TableSkeleton rows={6} />
+      ) : visible.length === 0 ? (
         <div className="empty-state">
-          <svg className="empty-state__icon mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <p className="empty-state__title">{searchQuery ? 'No matching incidents' : 'No incidents found'}</p>
-          <p className="empty-state__description">{searchQuery ? 'Try a different search term.' : 'Create your first incident to get started.'}</p>
+          {hasFilters ? (
+            <>
+              <MagnifyingGlass size={26} className="empty-state__icon" />
+              <p className="empty-state__title">No incidents match these filters</p>
+              <p className="empty-state__description">
+                Try a different severity or status, or clear the filters to see everything.
+              </p>
+              <button type="button" onClick={clearFilters} className="btn btn--secondary btn--sm mt-4">
+                Clear filters
+              </button>
+            </>
+          ) : (
+            <>
+              <Warning size={26} className="empty-state__icon" />
+              <p className="empty-state__title">No incidents on record</p>
+              <p className="empty-state__description">
+                When something breaks, declare it here so the whole team works from one timeline.
+              </p>
+              <WriteGate>
+                <button
+                  type="button"
+                  onClick={() => setShowCreate(true)}
+                  className="btn btn--primary btn--sm mt-4"
+                >
+                  <Plus size={14} weight="bold" />
+                  Declare the first incident
+                </button>
+              </WriteGate>
+            </>
+          )}
         </div>
       ) : (
         <div className="table-container">
           <table className="table">
+            <caption className="sr-only">
+              Incidents, sorted by {sort.key} {sort.direction === 'asc' ? 'ascending' : 'descending'}
+            </caption>
             <thead>
               <tr>
-                <th>Title</th>
-                <th>Severity</th>
-                <th>Status</th>
-                <th>Commander</th>
-                <th>Created</th>
+                {COLUMNS.map((column) => {
+                  const active = sort.key === column.key;
+                  return (
+                    <th
+                      key={column.key}
+                      style={{ width: column.width }}
+                      aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(column.key)}
+                        className="inline-flex items-center gap-1 uppercase tracking-wider transition-colors hover:text-primary"
+                        style={{ color: active ? 'var(--text-hi)' : 'inherit', font: 'inherit' }}
+                      >
+                        {column.label}
+                        {active &&
+                          (sort.direction === 'asc' ? (
+                            <CaretUp size={10} weight="fill" />
+                          ) : (
+                            <CaretDown size={10} weight="fill" />
+                          ))}
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
-              {filteredIncidents.map((incident) => (
-                <tr
-                  key={incident._id}
-                  onClick={() => navigate(`/incidents/${incident._id}`)}
-                  className="cursor-pointer"
-                >
-                  <td>
-                    <div className="font-medium">{incident.title}</div>
-                  </td>
-                  <td>
-                    <span
-                      className="badge"
-                      style={{
-                        backgroundColor: `${SEVERITY_COLORS[incident.severity]}20`,
-                        color: SEVERITY_COLORS[incident.severity]
-                      }}
-                    >
-                      {incident.severity}
-                    </span>
-                  </td>
-                  <td>
-                    <span
-                      className="badge"
-                      style={{
-                        backgroundColor: `${STATUS_COLORS[incident.status]}20`,
-                        color: STATUS_COLORS[incident.status]
-                      }}
-                    >
-                      {incident.status}
-                    </span>
-                  </td>
-                  <td className="text-secondary">
-                    {incident.commander?.name || 'Unassigned'}
-                  </td>
-                  <td className="text-secondary text-sm">
-                    {new Date(incident.createdAt).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
+              <AnimatePresence initial={false}>
+                {visible.map((incident) => (
+                  <motion.tr
+                    key={incident._id}
+                    layout
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+                    // A clickable row must also be reachable and activatable
+                    // from the keyboard, which the previous version was not.
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Open incident: ${incident.title}`}
+                    onClick={() => openIncident(incident._id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openIncident(incident._id);
+                      }
+                    }}
+                    className="cursor-pointer"
+                  >
+                    <td>
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className="w-0.5 h-7 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: SIGNAL_VAR[incident.severity] }}
+                          aria-hidden="true"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-medium text-primary truncate">{incident.title}</div>
+                          {incident.description && (
+                            <div className="text-xs text-muted truncate mt-0.5">
+                              {incident.description}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <SeverityBadge severity={incident.severity} size="sm" />
+                    </td>
+                    <td>
+                      <StatusBadge status={incident.status} size="sm" pulse />
+                    </td>
+                    <td className="text-secondary">
+                      {incident.commander?.name || <span className="text-muted">Unassigned</span>}
+                    </td>
+                    <td className="text-secondary text-xs tabular">
+                      <time dateTime={incident.createdAt} title={new Date(incident.createdAt).toLocaleString()}>
+                        {new Date(incident.createdAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                        {', '}
+                        {new Date(incident.createdAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </time>
+                    </td>
+                  </motion.tr>
+                ))}
+              </AnimatePresence>
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Create Modal */}
-      {showCreateModal && (
-        <CreateIncidentModal onClose={() => setShowCreateModal(false)} />
-      )}
+      <CreateIncidentModal isOpen={showCreate} onClose={closeCreate} />
     </AppLayout>
-  );
-}
-
-/**
- * Create Incident Modal
- */
-function CreateIncidentModal({ onClose }) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [severity, setSeverity] = useState('medium');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const addIncident = useIncidentStore((state) => state.addIncident);
-  const navigate = useNavigate();
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const { incident } = await incidentApi.create({ title, description, severity });
-      addIncident(incident);
-      onClose();
-      navigate(`/incidents/${incident._id}`);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="modal-overlay">
-      <div className="modal">
-        <div className="modal__header">
-          <h3 className="modal__title">Create New Incident</h3>
-          <button onClick={onClose} className="modal__close">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-500 px-4 py-3 rounded-lg mb-4">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="label">Title *</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-              className="input"
-              placeholder="Brief incident description"
-            />
-          </div>
-
-          <div>
-            <label className="label">Severity *</label>
-            <select
-              value={severity}
-              onChange={(e) => setSeverity(e.target.value)}
-              className="select"
-            >
-              <option value="critical">Critical</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="label">Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="textarea"
-              placeholder="Detailed description..."
-            />
-          </div>
-
-          <div className="modal__footer">
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn btn--secondary"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading || !title}
-              className="btn btn--primary"
-            >
-              {isLoading ? 'Creating...' : 'Create Incident'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }
 
