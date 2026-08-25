@@ -25,6 +25,14 @@ export { CopyIncidentSummary } from './CopyIncidentSummary';
 // Presence & Focus components
 export { PresenceIndicator } from './PresenceIndicator';
 
+export { CreateIncidentModal } from './CreateIncidentModal';
+
 // Audit & Status
 export { AuditTimeline } from './AuditTimeline';
 export { ConnectionStatus } from './ConnectionStatus';
+
+// Global
+export { CommandPalette } from './CommandPalette';
+
+// UI primitives
+export { Modal, SeverityBadge, StatusBadge } from './ui';

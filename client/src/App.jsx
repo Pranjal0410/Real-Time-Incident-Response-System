@@ -1,35 +1,34 @@
 /**
- * App Component
- * Root component with routing and socket initialization
+ * App
+ * Routing, socket lifecycle, and the global command palette.
  *
- * ARCHITECTURE:
- * - useSocket hook manages socket lifecycle tied to auth
- * - Protected routes redirect unauthenticated users
- * - Socket connects only after successful auth
+ * ROUTES
+ * - /              Overview — live posture, trends, what needs attention
+ * - /incidents     Incident queue — filterable, sortable, shareable via URL
+ * - /incidents/:id Incident room
+ * - *              404 (previously every unknown path silently redirected,
+ *                  which hid broken links instead of surfacing them)
  *
- * PERFORMANCE OPTIMIZATION:
- * - React.lazy for code splitting — each page loads on demand
- * - Eliminates 55% unused JS on first load (2057KB of 3710KB)
- * - recharts, AuditTimeline, NotificationCenter only load when needed
+ * PERFORMANCE
+ * Pages are code-split with React.lazy, so recharts and the timeline only
+ * download on the routes that use them.
  */
 import { useEffect, useState, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from 'sonner';
 import { useAuthStore } from './stores';
 import { useSocket } from './hooks';
 import { authApi } from './services/api';
+import { CommandPalette } from './components/CommandPalette';
+import { PageSkeleton } from './components/ui/Skeleton';
 
-// Code splitting — pages load only when visited
-// BEFORE: All 3 pages loaded upfront (55% unused JS!)
-// AFTER:  Each page chunk loads on demand
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const OverviewPage = lazy(() => import('./pages/OverviewPage'));
 const IncidentListPage = lazy(() => import('./pages/IncidentListPage'));
 const IncidentDetailPage = lazy(() => import('./pages/IncidentDetailPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
-/**
- * Protected Route wrapper
- * Redirects to login if not authenticated
- */
 function ProtectedRoute({ children }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   if (!isAuthenticated) {
@@ -39,9 +38,8 @@ function ProtectedRoute({ children }) {
 }
 
 /**
- * App Shell
- * Handles socket connection based on auth state
- * Verifies token on startup to clear stale sessions
+ * Verifies the stored token once on startup so a stale session does not render
+ * a half-broken authenticated shell.
  */
 function AppShell({ children }) {
   const token = useAuthStore((state) => state.token);
@@ -54,7 +52,8 @@ function AppShell({ children }) {
       setVerified(true);
       return;
     }
-    authApi.me()
+    authApi
+      .me()
       .then(() => setVerified(true))
       .catch(() => {
         logout();
@@ -64,63 +63,85 @@ function AppShell({ children }) {
 
   useSocket();
 
-  if (!verified) return null;
+  if (!verified) return <PageSkeleton />;
   return <>{children}</>;
 }
 
-/**
- * Loading fallback for lazy loaded pages
- */
-function PageLoader() {
+function AnimatedRoutes() {
+  const location = useLocation();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      height: '100vh',
-      color: '#6B7280',
-      fontSize: '14px'
-    }}>
-      Loading...
-    </div>
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={location.pathname}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
+      >
+        <Routes location={location}>
+          <Route
+            path="/login"
+            element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
+          />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <OverviewPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/incidents"
+            element={
+              <ProtectedRoute>
+                <IncidentListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/incidents/:id"
+            element={
+              <ProtectedRoute>
+                <IncidentDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
-/**
- * Main App
- */
+/** The palette needs router context, so it mounts inside BrowserRouter. */
+function PaletteGate() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  return isAuthenticated ? <CommandPalette /> : null;
+}
+
 export function App() {
   return (
     <BrowserRouter>
       <AppShell>
         <Toaster
-          position="top-right"
+          position="bottom-right"
           theme="dark"
-          richColors
           closeButton
+          toastOptions={{
+            style: {
+              background: 'var(--bg-raised)',
+              border: '1px solid var(--line-strong)',
+              color: 'var(--text-hi)',
+              fontSize: '13px',
+            },
+          }}
         />
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route
-              path="/incidents"
-              element={
-                <ProtectedRoute>
-                  <IncidentListPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/incidents/:id"
-              element={
-                <ProtectedRoute>
-                  <IncidentDetailPage />
-                </ProtectedRoute>
-              }
-            />
-            {/* Default redirect */}
-            <Route path="*" element={<Navigate to="/incidents" replace />} />
-          </Routes>
+        <PaletteGate />
+        <Suspense fallback={<PageSkeleton />}>
+          <AnimatedRoutes />
         </Suspense>
       </AppShell>
     </BrowserRouter>

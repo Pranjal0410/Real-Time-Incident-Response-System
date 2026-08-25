@@ -1,6 +1,38 @@
+/**
+ * NotificationCenter
+ *
+ * Rebuilt on the design system: the previous version carried ~60 lines of
+ * inline styles (including a hardcoded `rgba(45,45,45,0.5)` unread tint left
+ * over from an older palette) and hand-managed hover through onMouseEnter /
+ * onMouseLeave handlers that mutated `style` directly.
+ *
+ * Also adds Escape-to-close, which the popover previously lacked.
+ */
+import { useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, BellSlash, Check } from '@phosphor-icons/react';
 import { useNotificationStore } from '../stores';
 import { useClickOutside } from '../hooks';
-import { useRef } from 'react';
+import { SIGNAL_VAR } from '../constants/signals';
+
+/** Maps a notification to a signal hue; anything unrecognised stays neutral. */
+function toneFor(notification) {
+  const key = notification.severity || notification.tone;
+  return SIGNAL_VAR[key] || 'var(--text-lo)';
+}
+
+function formatTime(timestamp) {
+  const diff = Date.now() - new Date(timestamp).getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString();
+}
 
 export function NotificationCenter({ isOpen, onClose }) {
   const ref = useRef(null);
@@ -12,153 +44,156 @@ export function NotificationCenter({ isOpen, onClose }) {
 
   useClickOutside(ref, onClose);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKeyDown = (event) => event.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <div
-      ref={ref}
-      style={{
-        position: 'fixed',
-        top: '56px',
-        right: '24px',
-        zIndex: 50,
-        width: '384px',
-        maxWidth: 'calc(100vw - 32px)',
-        backgroundColor: 'var(--bg-secondary)',
-        borderRadius: '0.5rem',
-        border: '1px solid var(--border-primary)',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
-        overflow: 'hidden'
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          backgroundColor: 'var(--bg-tertiary)',
-          borderBottom: '1px solid var(--border-primary)',
-          padding: '0.75rem 1rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}
-      >
-        <div>
-          <h2 className="text-lg font-semibold text-primary">Notifications</h2>
-          {unreadCount > 0 && (
-            <p className="text-xs text-secondary mt-1">{unreadCount} unread</p>
-          )}
-        </div>
-        <button
-          onClick={onClose}
-          className="text-secondary hover:text-primary transition"
-          title="Close"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Notifications List */}
-      <div style={{ maxHeight: '384px', overflowY: 'auto' }}>
-        {notifications.length === 0 ? (
-          <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            <p>No notifications yet</p>
-          </div>
-        ) : (
-          notifications.map((notification) => (
-            <div
-              key={notification.id}
-              style={{
-                padding: '0.75rem 1rem',
-                borderBottom: '1px solid var(--border-primary)',
-                backgroundColor: !notification.read ? 'rgba(45, 45, 45, 0.5)' : 'transparent',
-                cursor: 'pointer',
-                transition: 'background-color 0.2s'
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = !notification.read ? 'rgba(45, 45, 45, 0.5)' : 'transparent')}
-              onClick={() => markAsRead(notification.id)}
-            >
-              <div className="flex justify-between items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{notification.icon || '📢'}</span>
-                    <p className="text-primary font-medium truncate">
-                      {notification.message}
-                    </p>
-                    {!notification.read && (
-                      <span className="ml-auto w-2 h-2 bg-accent-primary rounded-full flex-shrink-0"></span>
-                    )}
-                  </div>
-                  <p className="text-xs text-secondary mt-1">
-                    {formatTime(notification.timestamp)}
-                  </p>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeNotification(notification.id);
-                  }}
-                  className="text-secondary hover:text-primary transition flex-shrink-0"
-                  title="Dismiss"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M18 6L6 18M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Footer Actions */}
-      {notifications.length > 0 && (
-        <div
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          ref={ref}
+          role="dialog"
+          aria-label="Notifications"
+          className="fixed rounded-xl overflow-hidden"
           style={{
-            backgroundColor: 'var(--bg-tertiary)',
-            borderTop: '1px solid var(--border-primary)',
-            padding: '0.5rem 1rem',
-            display: 'flex',
-            gap: '0.5rem'
+            top: 'calc(var(--topbar-h) + 6px)',
+            right: 20,
+            zIndex: 45,
+            width: 372,
+            maxWidth: 'calc(100vw - 32px)',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--line-strong)',
+            boxShadow: '0 24px 64px -12px rgba(4, 6, 9, 0.85)',
           }}
+          initial={{ opacity: 0, y: -6, scale: 0.985 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -4, scale: 0.99 }}
+          transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
         >
-          {unreadCount > 0 && (
-            <button
-              onClick={markAllAsRead}
-              className="flex-1 text-sm text-accent-primary hover:text-accent-secondary transition font-medium"
-            >
-              Mark all as read
-            </button>
-          )}
-          <button
-            onClick={clearAll}
-            className="flex-1 text-sm text-secondary hover:text-primary transition font-medium"
+          <header
+            className="flex items-center justify-between gap-3 px-4 py-3"
+            style={{ borderBottom: '1px solid var(--line)' }}
           >
-            Clear all
-          </button>
-        </div>
+            <div>
+              <h2 className="text-[14px] font-semibold text-primary">Notifications</h2>
+              {unreadCount > 0 && (
+                <p className="text-[12px] text-muted mt-0.5 tabular">{unreadCount} unread</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="modal__close"
+              aria-label="Close notifications"
+            >
+              <X size={15} weight="bold" />
+            </button>
+          </header>
+
+          <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+            {notifications.length === 0 ? (
+              <div className="px-4 py-10 text-center">
+                <BellSlash size={22} className="mx-auto mb-2.5" style={{ color: 'var(--text-lo)' }} />
+                <p className="text-[14px] text-secondary">You are all caught up</p>
+                <p className="text-[13px] text-muted mt-1">
+                  Incident activity will appear here as it happens.
+                </p>
+              </div>
+            ) : (
+              <ul>
+                <AnimatePresence initial={false}>
+                  {notifications.map((notification, index) => (
+                    <motion.li
+                      key={notification.id}
+                      layout
+                      initial={{ opacity: 0, x: 24 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 24 }}
+                      transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+                      style={{ borderTop: index === 0 ? 'none' : '1px solid var(--line)' }}
+                    >
+                      <div
+                        className="group relative flex items-start gap-2.5 px-4 py-3 transition-colors hover:bg-tertiary"
+                        style={{
+                          background: notification.read ? 'transparent' : 'var(--bg-raised)',
+                        }}
+                      >
+                        <span
+                          className="signal-dot mt-1.5 flex-shrink-0"
+                          style={{ backgroundColor: toneFor(notification) }}
+                          aria-hidden="true"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => markAsRead(notification.id)}
+                          className="min-w-0 flex-1 text-left"
+                          aria-label={
+                            notification.read
+                              ? notification.message
+                              : `Mark as read: ${notification.message}`
+                          }
+                        >
+                          <p className="text-[14px] text-primary leading-snug">
+                            {notification.message}
+                          </p>
+                          <p className="text-[12px] text-muted mt-1 tabular">
+                            {formatTime(notification.timestamp)}
+                          </p>
+                        </button>
+
+                        {!notification.read && (
+                          <span
+                            className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5"
+                            style={{ background: 'var(--accent)' }}
+                            aria-label="Unread"
+                          />
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => removeNotification(notification.id)}
+                          className="modal__close flex-shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                          style={{ width: 22, height: 22 }}
+                          aria-label="Dismiss notification"
+                          title="Dismiss"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
+              </ul>
+            )}
+          </div>
+
+          {notifications.length > 0 && (
+            <footer
+              className="flex items-center gap-2 px-3 py-2"
+              style={{ borderTop: '1px solid var(--line)', background: 'var(--bg-base)' }}
+            >
+              {unreadCount > 0 && (
+                <button type="button" onClick={markAllAsRead} className="btn btn--ghost btn--sm flex-1">
+                  <Check size={13} weight="bold" />
+                  Mark all read
+                </button>
+              )}
+              <button type="button" onClick={clearAll} className="btn btn--ghost btn--sm flex-1">
+                Clear all
+              </button>
+            </footer>
+          )}
+        </motion.div>
       )}
-    </div>
+    </AnimatePresence>
   );
-}
-
-function formatTime(timestamp) {
-  const now = new Date();
-  const diff = now - new Date(timestamp);
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
-
-  return new Date(timestamp).toLocaleDateString();
 }
 
 export default NotificationCenter;

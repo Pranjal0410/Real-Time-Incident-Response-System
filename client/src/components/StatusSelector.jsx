@@ -1,144 +1,239 @@
 /**
- * StatusSelector Component
- * Role-aware status update control - Dark theme
+ * StatusSelector
+ * Role-aware control for moving an incident through its status flow.
+ *
+ * Fixes carried in beyond the restyle:
+ *  - The "someone else is editing this" pulse was animating
+ *    `rgba(212,168,83,…)` — a gold accent from a theme this app no longer uses.
+ *    It now uses the focused user's own presence colour, which is what the
+ *    indicator above the control already shows.
+ *  - The dropdown could only be closed by picking an option: no Escape, no
+ *    click-outside, no arrow-key navigation.
+ *  - Its status list was a fourth hardcoded copy of the status/colour map.
  */
-import { useState, useEffect } from 'react';
-import { useAuthStore } from '../stores';
-import { useFocus } from '../hooks';
-import { updateStatus } from '../services/socket';
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { CaretDown, Check } from '@phosphor-icons/react';
 import clsx from 'clsx';
-
-const STATUSES = [
-  { value: 'investigating', label: 'Investigating', color: '#EF4444' },
-  { value: 'identified', label: 'Identified', color: '#F59E0B' },
-  { value: 'monitoring', label: 'Monitoring', color: '#3B82F6' },
-  { value: 'resolved', label: 'Resolved', color: '#10B981' }
-];
+import { useAuthStore } from '../stores';
+import { useFocus, useClickOutside } from '../hooks';
+import { updateStatus } from '../services/socket';
+import {
+  STATUS_ORDER,
+  STATUS_LABEL,
+  STATUS_HINT,
+  SIGNAL_VAR,
+  badgeClass,
+} from '../constants/signals';
 
 export function StatusSelector({ incidentId, currentStatus }) {
   const canWrite = useAuthStore((state) => state.canWrite());
   const [isOpen, setIsOpen] = useState(false);
+  const [highlighted, setHighlighted] = useState(0);
   const [confirmation, setConfirmation] = useState(null);
-  const { onFocus, onBlur, focusedUsers } = useFocus(incidentId, 'status');
+  const containerRef = useRef(null);
 
-  const currentStatusObj = STATUSES.find((s) => s.value === currentStatus) || STATUSES[0];
+  const { onFocus, onBlur, focusedUsers, hasFocus } = useFocus(incidentId, 'status');
 
-  // Show confirmation when status changes
-  useEffect(() => {
-    if (confirmation) {
-      const timer = setTimeout(() => setConfirmation(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [confirmation]);
-
-  const handleStatusChange = (newStatus) => {
-    if (newStatus !== currentStatus) {
-      updateStatus(incidentId, newStatus);
-      const newStatusObj = STATUSES.find(s => s.value === newStatus);
-      setConfirmation(`Status updated to ${newStatusObj?.label}`);
-    }
+  const close = () => {
     setIsOpen(false);
     onBlur();
   };
 
-  // VIEWER: Read-only badge
+  useClickOutside(containerRef, () => isOpen && close());
+
+  useEffect(() => {
+    if (!confirmation) return undefined;
+    const timer = setTimeout(() => setConfirmation(null), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmation]);
+
+  useEffect(() => {
+    if (isOpen) setHighlighted(Math.max(STATUS_ORDER.indexOf(currentStatus), 0));
+  }, [isOpen, currentStatus]);
+
+  const handleStatusChange = (newStatus) => {
+    if (newStatus !== currentStatus) {
+      updateStatus(incidentId, newStatus);
+      setConfirmation(`Status set to ${STATUS_LABEL[newStatus]}`);
+    }
+    close();
+  };
+
+  const onKeyDown = (event) => {
+    if (!isOpen) {
+      if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        setIsOpen(true);
+        onFocus();
+      }
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setHighlighted((i) => (i + 1) % STATUS_ORDER.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setHighlighted((i) => (i - 1 + STATUS_ORDER.length) % STATUS_ORDER.length);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleStatusChange(STATUS_ORDER[highlighted]);
+    }
+  };
+
+  // Viewers get the state, not the control.
   if (!canWrite) {
     return (
       <div className="status-badge-readonly flex items-center gap-2">
-        <span
-          className="badge"
-          style={{
-            backgroundColor: `${currentStatusObj.color}20`,
-            color: currentStatusObj.color
-          }}
-        >
-          {currentStatusObj.label}
-        </span>
-        <span className="text-xs text-muted">(read only)</span>
+        <AnimatePresence mode="wait">
+          <motion.span
+            key={currentStatus}
+            className={`badge ${badgeClass(currentStatus)}`}
+            initial={{ opacity: 0, scale: 0.94 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.94 }}
+            transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
+          >
+            <span className={`signal-dot ${currentStatus !== 'resolved' ? 'signal-dot--pulse' : ''}`} />
+            {STATUS_LABEL[currentStatus] || currentStatus}
+          </motion.span>
+        </AnimatePresence>
+        <span className="text-[12px] text-muted">read only</span>
       </div>
     );
   }
 
-  // RESPONDER/ADMIN: Interactive dropdown
+  const focusColor = focusedUsers[0]?.color;
+
   return (
-    <div className="status-selector relative">
-      {/* Focus presence indicators */}
+    <div className="status-selector relative" ref={containerRef}>
       {focusedUsers.length > 0 && (
-        <div className="focus-indicators absolute -top-6 left-0 flex gap-1">
+        <div className="focus-indicators absolute -top-6 left-0 flex gap-1 z-10">
           {focusedUsers.map((user) => (
             <span
               key={user.userId}
-              className="text-xs px-2 py-0.5 rounded"
-              style={{ backgroundColor: user.color, color: 'white' }}
+              className="text-[11.5px] px-1.5 py-0.5 rounded font-medium"
+              style={{ backgroundColor: user.color, color: '#08090b' }}
             >
-              {user.name}
+              {user.name} is here
             </span>
           ))}
         </div>
       )}
 
-      <button
+      <motion.button
+        type="button"
         onClick={() => {
-          setIsOpen(!isOpen);
-          if (!isOpen) onFocus();
+          const next = !isOpen;
+          setIsOpen(next);
+          if (next) onFocus();
+          else onBlur();
         }}
-        onBlur={onBlur}
-        className={clsx(
-          'btn btn--secondary flex items-center gap-2',
-          focusedUsers.length > 0 && 'ring-2'
-        )}
-        style={{
-          borderColor: currentStatusObj.color,
-          ringColor: focusedUsers[0]?.color
-        }}
+        onKeyDown={onKeyDown}
+        className="btn btn--secondary w-full justify-between"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-label={`Status: ${STATUS_LABEL[currentStatus]}. Change status.`}
+        // Only pulse while another user actually holds focus on this field.
+        animate={
+          hasFocus && focusColor
+            ? { boxShadow: [`0 0 0 0 ${focusColor}00`, `0 0 0 3px ${focusColor}55`, `0 0 0 0 ${focusColor}00`] }
+            : { boxShadow: '0 0 0 0 rgba(0,0,0,0)' }
+        }
+        transition={{ duration: 1.6, repeat: hasFocus ? Infinity : 0, ease: 'easeInOut' }}
       >
-        <span
-          className="w-3 h-3 rounded-full"
-          style={{ backgroundColor: currentStatusObj.color }}
-        />
-        {currentStatusObj.label}
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
+        <AnimatePresence mode="wait">
+          <motion.span
+            key={currentStatus}
+            className="flex items-center gap-2 min-w-0"
+            initial={{ opacity: 0, y: 3 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -3 }}
+            transition={{ duration: 0.2 }}
+          >
+            <span
+              className={`signal-dot ${currentStatus !== 'resolved' ? 'signal-dot--pulse' : ''}`}
+              style={{ backgroundColor: SIGNAL_VAR[currentStatus] }}
+            />
+            <span className="truncate">{STATUS_LABEL[currentStatus] || currentStatus}</span>
+          </motion.span>
+        </AnimatePresence>
+        <CaretDown size={12} weight="bold" className="text-muted flex-shrink-0" />
+      </motion.button>
 
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-secondary border rounded-lg shadow-lg z-10 min-w-[12rem]">
-          {STATUSES.map((status) => (
-            <button
-              key={status.value}
-              onClick={() => handleStatusChange(status.value)}
-              disabled={status.value === currentStatus}
-              className={clsx(
-                'w-full px-4 py-2 text-left flex items-center gap-2',
-                'hover:bg-tertiary disabled:opacity-50 disabled:cursor-not-allowed',
-                'text-primary transition-colors'
-              )}
-            >
-              <span
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: status.color }}
-              />
-              {status.label}
-              {status.value === currentStatus && (
-                <svg className="ml-auto w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.ul
+            role="listbox"
+            aria-label="Incident status"
+            className="absolute left-0 right-0 mt-1.5 rounded-[10px] overflow-hidden z-20 p-1"
+            style={{
+              background: 'var(--bg-raised)',
+              border: '1px solid var(--line-strong)',
+              boxShadow: '0 16px 40px -10px rgba(4, 6, 9, 0.8)',
+            }}
+            initial={{ opacity: 0, y: -4, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -3, scale: 0.99 }}
+            transition={{ duration: 0.16, ease: [0.32, 0.72, 0, 1] }}
+          >
+            {STATUS_ORDER.map((status, index) => {
+              const isCurrent = status === currentStatus;
+              return (
+                <li key={status} role="option" aria-selected={isCurrent}>
+                  <button
+                    type="button"
+                    onClick={() => handleStatusChange(status)}
+                    onMouseMove={() => setHighlighted(index)}
+                    disabled={isCurrent}
+                    title={STATUS_HINT[status]}
+                    className={clsx(
+                      'w-full px-2.5 py-2 rounded-md flex items-center gap-2.5 text-left text-[14px] transition-colors',
+                      isCurrent ? 'cursor-default opacity-60' : 'cursor-pointer'
+                    )}
+                    style={{
+                      background:
+                        highlighted === index && !isCurrent ? 'var(--bg-overlay)' : 'transparent',
+                      color: 'var(--text-hi)',
+                    }}
+                  >
+                    <span
+                      className="signal-dot"
+                      style={{ backgroundColor: SIGNAL_VAR[status] }}
+                    />
+                    <span className="min-w-0">
+                      <span className="block">{STATUS_LABEL[status]}</span>
+                      <span className="block text-[12px] text-muted truncate">
+                        {STATUS_HINT[status]}
+                      </span>
+                    </span>
+                    {isCurrent && <Check size={13} weight="bold" className="ml-auto text-muted" />}
+                  </button>
+                </li>
+              );
+            })}
+          </motion.ul>
+        )}
+      </AnimatePresence>
 
-      {/* Inline confirmation */}
-      {confirmation && (
-        <div className="absolute top-full left-0 mt-2 flex items-center gap-1 text-sm text-green-500 animate-fade-in">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          {confirmation}
-        </div>
-      )}
+      <AnimatePresence>
+        {confirmation && (
+          <motion.p
+            className="flex items-center gap-1.5 mt-2 text-[13px]"
+            style={{ color: 'var(--signal-low)' }}
+            role="status"
+            initial={{ opacity: 0, y: -3 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+          >
+            <Check size={13} weight="bold" />
+            {confirmation}
+          </motion.p>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
