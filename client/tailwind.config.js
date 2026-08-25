@@ -19,13 +19,13 @@ module.exports = {
       // arm's length on a large monitor, and the stock 12px/14px steps were
       // too tight to scan quickly. Spacing is left alone so density holds.
       fontSize: {
-        xs: ['13px', { lineHeight: '1.45' }],
-        sm: ['14.5px', { lineHeight: '1.5' }],
-        base: ['16px', { lineHeight: '1.55' }],
-        lg: ['18px', { lineHeight: '1.5' }],
-        xl: ['20px', { lineHeight: '1.4' }],
-        '2xl': ['25px', { lineHeight: '1.3' }],
-        '3xl': ['31px', { lineHeight: '1.2' }],
+        xs: ['14px', { lineHeight: '1.45' }],
+        sm: ['15.5px', { lineHeight: '1.5' }],
+        base: ['17px', { lineHeight: '1.55' }],
+        lg: ['19px', { lineHeight: '1.5' }],
+        xl: ['21.5px', { lineHeight: '1.4' }],
+        '2xl': ['27px', { lineHeight: '1.3' }],
+        '3xl': ['33px', { lineHeight: '1.2' }],
       },
 
       fontFamily: {

@@ -62,7 +62,7 @@
   --dur: 220ms;
 
   /* Layout */
-  --sidebar-w: 244px;
+  --sidebar-w: 252px;
   --topbar-h: 60px;
 
   /* Legacy token aliases. Several components still read these directly via
@@ -95,7 +95,7 @@
     background-color: var(--bg-base);
     color: var(--text-hi);
     font-family: theme('fontFamily.sans');
-    font-size: 15.5px;
+    font-size: 16.5px;
     line-height: 1.55;
     letter-spacing: -0.006em;
     -webkit-font-smoothing: antialiased;
@@ -240,7 +240,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 15.5px;
+    font-size: 16.5px;
     font-weight: 600;
     letter-spacing: -0.02em;
     color: var(--text-hi);
@@ -267,7 +267,7 @@
   }
 
   .sidebar__nav-label {
-    font-size: 11.5px;
+    font-size: 12.5px;
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -282,7 +282,7 @@
     gap: 10px;
     padding: 7px 10px;
     border-radius: 7px;
-    font-size: 14.5px;
+    font-size: 15.5px;
     font-weight: 450;
     color: var(--text-mid);
     text-decoration: none;
@@ -321,7 +321,7 @@
 
   .sidebar__nav-count {
     margin-left: auto;
-    font-size: 12px;
+    font-size: 13px;
     font-variant-numeric: tabular-nums;
     color: var(--text-lo);
     background-color: var(--bg-overlay);
@@ -353,7 +353,7 @@
     background-color: var(--bg-overlay);
     border: 1px solid var(--line-strong);
     color: var(--text-hi);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     flex-shrink: 0;
   }
@@ -364,7 +364,7 @@
   }
 
   .sidebar__user-name {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     color: var(--text-hi);
     white-space: nowrap;
@@ -373,7 +373,7 @@
   }
 
   .sidebar__user-role {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-lo);
     text-transform: capitalize;
   }
@@ -410,7 +410,7 @@
     border: 1px solid var(--line);
     background-color: var(--bg-surface);
     color: var(--text-hi);
-    font-size: 14px;
+    font-size: 15px;
     transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
   }
 
@@ -469,7 +469,7 @@
     border-radius: 999px;
     background-color: var(--signal-critical);
     color: #fff;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 650;
     display: grid;
     place-items: center;
@@ -500,7 +500,7 @@
   }
 
   .panel__title {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     color: var(--text-hi);
     letter-spacing: -0.01em;
@@ -589,7 +589,7 @@
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 550;
     font-variant-numeric: tabular-nums;
   }
@@ -599,7 +599,7 @@
   .stat-card__trend--neutral { color: var(--text-lo); }
 
   .stat-card__value {
-    font-size: 32px;
+    font-size: 34px;
     font-weight: 550;
     line-height: 1.05;
     letter-spacing: -0.035em;
@@ -609,7 +609,7 @@
 
   .stat-card__label {
     margin-top: 5px;
-    font-size: 13px;
+    font-size: 14px;
     color: var(--text-mid);
   }
 
@@ -631,7 +631,7 @@
   }
 
   .chart-container__title {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     color: var(--text-hi);
   }
@@ -649,7 +649,7 @@
     border-radius: 8px;
     border: 1px solid transparent;
     font-family: inherit;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     white-space: nowrap;
     cursor: pointer;
@@ -714,14 +714,14 @@
   .btn--sm {
     height: 27px;
     padding: 0 9px;
-    font-size: 13px;
+    font-size: 14px;
     border-radius: 7px;
   }
 
   .btn--lg {
     height: 38px;
     padding: 0 16px;
-    font-size: 15.5px;
+    font-size: 16.5px;
   }
 
   .btn--icon {
@@ -738,7 +738,7 @@
   .label {
     display: block;
     margin-bottom: 6px;
-    font-size: 12.5px;
+    font-size: 13.5px;
     font-weight: 550;
     letter-spacing: 0.02em;
     color: var(--text-mid);
@@ -754,7 +754,7 @@
     background-color: var(--bg-base);
     color: var(--text-hi);
     font-family: inherit;
-    font-size: 14.5px;
+    font-size: 15.5px;
     transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   }
 
@@ -806,7 +806,7 @@
     align-items: center;
     gap: 5px;
     margin-top: 5px;
-    font-size: 13px;
+    font-size: 14px;
     color: var(--signal-critical);
   }
 
@@ -827,7 +827,7 @@
   .table th {
     padding: 9px 16px;
     text-align: left;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -841,7 +841,7 @@
     padding: 11px 16px;
     border-bottom: 1px solid var(--line);
     color: var(--text-hi);
-    font-size: 14.5px;
+    font-size: 15.5px;
     vertical-align: middle;
   }
 
@@ -877,7 +877,7 @@
     gap: 5px;
     padding: 2px 8px;
     border-radius: 999px;
-    font-size: 12.5px;
+    font-size: 13.5px;
     font-weight: 550;
     line-height: 1.5;
     text-transform: capitalize;
@@ -924,7 +924,7 @@
     border: 1px solid var(--line-strong);
     background-color: transparent;
     color: var(--text-mid);
-    font-size: 13.5px;
+    font-size: 14.5px;
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
@@ -945,7 +945,7 @@
   }
 
   .chip__count {
-    font-size: 12px;
+    font-size: 13px;
     font-variant-numeric: tabular-nums;
     color: var(--text-lo);
   }
@@ -985,7 +985,7 @@
   }
 
   .modal__title {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
     color: var(--text-hi);
   }
@@ -1043,14 +1043,14 @@
   }
 
   .empty-state__title {
-    font-size: 14.5px;
+    font-size: 15.5px;
     font-weight: 550;
     color: var(--text-hi);
   }
 
   .empty-state__description {
     margin-top: 4px;
-    font-size: 13.5px;
+    font-size: 14.5px;
     color: var(--text-lo);
     max-width: 44ch;
   }
@@ -1061,7 +1061,7 @@
     gap: 8px;
     padding: 10px 12px;
     border-radius: 9px;
-    font-size: 14px;
+    font-size: 15px;
     border: 1px solid;
   }
 
@@ -1121,7 +1121,7 @@
     background-color: var(--bg-raised);
     color: var(--text-lo);
     font-family: theme('fontFamily.mono');
-    font-size: 11.5px;
+    font-size: 12.5px;
     line-height: 1;
   }
 
@@ -1161,7 +1161,7 @@
     background: transparent;
     color: var(--text-hi);
     font-family: inherit;
-    font-size: 15.5px;
+    font-size: 16.5px;
     flex-shrink: 0;
   }
 
@@ -1180,7 +1180,7 @@
 
   .cmdk__group {
     padding: 8px 10px 4px;
-    font-size: 11.5px;
+    font-size: 12.5px;
     font-weight: 600;
     letter-spacing: 0.07em;
     text-transform: uppercase;
@@ -1198,7 +1198,7 @@
     background: transparent;
     color: var(--text-mid);
     font-family: inherit;
-    font-size: 14.5px;
+    font-size: 15.5px;
     text-align: left;
     cursor: pointer;
   }
@@ -1236,7 +1236,7 @@
   .timeline__time {
     text-align: right;
     font-family: theme('fontFamily.mono');
-    font-size: 12.5px;
+    font-size: 13.5px;
     color: var(--text-lo);
     padding-top: 4px;
   }
@@ -1267,7 +1267,7 @@
   }
 
   .role-gate-message {
-    font-size: 13.5px;
+    font-size: 14.5px;
     color: var(--text-lo);
   }
 }
@@ -1287,7 +1287,7 @@
     border-radius: 8px;
     background-color: var(--accent);
     color: var(--accent-on);
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 550;
     transition: top 180ms var(--ease);
   }
@@ -1343,7 +1343,7 @@
     top: 0;
     left: 0;
     z-index: 50;
-    width: 244px;
+    width: 252px;
     transform: translateX(-100%);
     transition: transform 260ms var(--ease);
   }
